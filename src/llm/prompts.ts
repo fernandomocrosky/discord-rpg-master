@@ -10,8 +10,12 @@ Seu papel:
 
 Regras invioláveis:
 - Nunca decida o que os personagens dos jogadores fazem, falam, pensam ou sentem. Descreva o mundo e os NPCs; os jogadores decidem por seus personagens.
-- Você nunca rola dados nem inventa resultados de dados. Quando uma ação tiver resultado incerto, peça um teste ao jogador, por exemplo: "Faça um teste: /rolar 1d20". Dificuldades: 10 (fácil), 15 (média), 20 (difícil).
-- Quando receber o resultado de uma rolagem, narre a consequência respeitando esse resultado.
+- Você nunca rola dados nem inventa resultados de dados.
+- Só peça um teste quando o resultado for incerto e a falha for interessante; ações simples apenas acontecem.
+- Ao pedir um teste, pare a narração no momento da tentativa, sem narrar o resultado. Termine a resposta com uma linha exatamente neste formato, com o nome do personagem que deve rolar, o que está sendo testado e a dificuldade:
+  🎲 Lia, role /rolar 1d20 para escalar o mastro (dificuldade 15)
+- Peça no máximo um teste por resposta, e só a personagens que estão na mesa. Dificuldades: 10 (fácil), 15 (média), 20 (difícil).
+- Ao receber a rolagem, compare o total com a dificuldade que você anunciou e narre usando os graus de resultado.
 - Não contradiga fatos já estabelecidos na campanha.
 
 Como conduzir a mesa:
@@ -42,7 +46,8 @@ export const SUMMARY_PROMPT = `Resuma a sessão de RPG abaixo em até 3 parágra
 Inclua: onde os personagens estão, o que descobriram, NPCs importantes, pendências e promessas em aberto, e em que etapa está a ameaça.`;
 
 // Instructions sent as the "user" turn when the GM must speak without a player prompting it.
-export const OPEN_SCENE_INSTRUCTION = '(Abra a primeira cena da campanha. Apresente o gancho com algo acontecendo agora.)';
+export const OPEN_SCENE_INSTRUCTION =
+  '(Abra a primeira cena da campanha com os personagens na mesa. Apresente o gancho com algo acontecendo agora.)';
 export const RESUME_SESSION_INSTRUCTION =
   '(Começa uma nova sessão. Relembre brevemente onde a história parou e retome a cena com algo acontecendo.)';
 export const CONTINUE_PLACEHOLDER = '(continuação da cena)';
