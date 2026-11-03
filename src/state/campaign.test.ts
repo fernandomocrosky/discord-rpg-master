@@ -8,7 +8,9 @@ import {
   endSession,
   lastSummary,
   recordUsage,
+  sessionHistory,
   setCharacter,
+  setSecrets,
   startSession,
 } from './campaign.ts';
 
@@ -65,4 +67,21 @@ test('functions do not mutate the original campaign', () => {
   recordUsage(c, { inputTokens: 1, outputTokens: 1 });
   assert.equal(c.history.length, 0);
   assert.equal(currentSession(c)?.usage.calls, 0);
+});
+
+test('setSecrets stores GM-only notes', () => {
+  const c = setSecrets(base(), 'O padre quer queimar o diário.');
+  assert.equal(c.secrets, 'O padre quer queimar o diário.');
+});
+
+test('sessionHistory returns only entries from the ongoing session', () => {
+  const t = (minutes: number) => new Date(Date.UTC(2026, 0, 1, 0, minutes));
+  let c = createCampaign('123', { setting: 's', tone: 't', hook: 'h' }, t(0));
+  c = appendHistory(c, { role: 'gm', text: 'sessão 1' }, t(1));
+  c = endSession(c, 'resumo', t(2));
+  assert.deepEqual(sessionHistory(c), []);
+
+  c = startSession(c, t(3));
+  c = appendHistory(c, { role: 'gm', text: 'sessão 2' }, t(4));
+  assert.deepEqual(sessionHistory(c).map((e) => e.text), ['sessão 2']);
 });

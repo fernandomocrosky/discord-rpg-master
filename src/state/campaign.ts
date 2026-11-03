@@ -34,6 +34,7 @@ export interface Campaign {
   setting: string;
   tone: string;
   hook: string;
+  secrets?: string; // GM-only notes (hidden truth, NPC agendas, advancing threat); never shown to players
   createdAt: string;
   characters: Record<string, Character>; // key: Discord userId
   history: HistoryEntry[]; // recent entries only; long-term memory lives in session summaries
@@ -62,6 +63,10 @@ function newSession(number: number, now: Date): Session {
   return { number, startedAt: now.toISOString(), usage: { inputTokens: 0, outputTokens: 0, calls: 0 } };
 }
 
+export function setSecrets(campaign: Campaign, secrets: string): Campaign {
+  return { ...campaign, secrets };
+}
+
 export function setCharacter(campaign: Campaign, character: Character): Campaign {
   return { ...campaign, characters: { ...campaign.characters, [character.userId]: character } };
 }
@@ -84,6 +89,13 @@ export function currentSession(campaign: Campaign): Session | undefined {
 /** Summary of the last ended session, used to resume the story. */
 export function lastSummary(campaign: Campaign): string | undefined {
   return campaign.sessions.findLast((s) => s.summary)?.summary;
+}
+
+/** History entries recorded during the ongoing session (empty if there is none). */
+export function sessionHistory(campaign: Campaign): HistoryEntry[] {
+  const session = currentSession(campaign);
+  if (!session) return [];
+  return campaign.history.filter((entry) => entry.at >= session.startedAt);
 }
 
 export function startSession(campaign: Campaign, now = new Date()): Campaign {

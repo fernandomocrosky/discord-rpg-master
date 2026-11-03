@@ -51,3 +51,9 @@ export function rollDice(input: string, rng: Rng = Math.random): RollResult {
   const total = rolls.reduce((sum, r) => sum + r, 0) + expr.modifier;
   return { expression: formatDice(expr), rolls, modifier: expr.modifier, total };
 }
+
+/** Human-readable roll, e.g. "1d20+2 = 17 (15 + 2)" or "2d6 = 7 (3, 4)". */
+export function describeRoll({ expression, rolls, modifier, total }: RollResult): string {
+  const mod = modifier === 0 ? '' : modifier > 0 ? ` + ${modifier}` : ` - ${-modifier}`;
+  return `${expression} = ${total} (${rolls.join(', ')}${mod})`;
+}

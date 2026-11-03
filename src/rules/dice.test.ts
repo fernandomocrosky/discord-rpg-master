@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDice, rollDice, type Rng } from './dice.ts';
+import { describeRoll, parseDice, rollDice, type Rng } from './dice.ts';
 
 /** RNG that returns the given values in sequence. */
 function fixedRng(...values: number[]): Rng {
@@ -41,4 +41,10 @@ test('rollDice always stays within range', () => {
     const { rolls } = rollDice('1d20');
     assert.ok(rolls[0]! >= 1 && rolls[0]! <= 20);
   }
+});
+
+test('describeRoll shows dice, modifier and total', () => {
+  assert.equal(describeRoll({ expression: '1d20+2', rolls: [15], modifier: 2, total: 17 }), '1d20+2 = 17 (15 + 2)');
+  assert.equal(describeRoll({ expression: '2d6', rolls: [3, 4], modifier: 0, total: 7 }), '2d6 = 7 (3, 4)');
+  assert.equal(describeRoll({ expression: '1d8-1', rolls: [5], modifier: -1, total: 4 }), '1d8-1 = 4 (5 - 1)');
 });
