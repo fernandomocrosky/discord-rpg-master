@@ -1,7 +1,7 @@
 // Builds what the LLM sees on each call: GM prompt + campaign facts + a short window of recent history.
 import type Anthropic from '@anthropic-ai/sdk';
 import { CONTINUE_PLACEHOLDER, GM_SYSTEM_PROMPT } from '../llm/prompts.ts';
-import { lastSummary, type Campaign, type HistoryEntry } from '../state/campaign.ts';
+import { currentSession, lastSummary, type Campaign, type Character, type HistoryEntry } from '../state/campaign.ts';
 
 /** How many recent history entries go into the prompt. */
 export const HISTORY_WINDOW = 12;
@@ -35,17 +35,24 @@ export function buildContext(campaign: Campaign, instruction?: string): LlmConte
 }
 
 function campaignBlock(campaign: Campaign): string {
+  // Only characters whose players are at the table take part in the scene.
+  const participants = new Set(currentSession(campaign)?.participants ?? []);
   const characters = Object.values(campaign.characters);
+  const atTable = characters.filter((c) => participants.has(c.userId));
+  const absent = characters.filter((c) => !participants.has(c.userId));
+  const describe = (list: Character[]) => list.map((c) => `${c.name} (${c.concept})`).join('; ');
+
   const lines = [
     'Campanha:',
     `- Cenário: ${campaign.setting}`,
     `- Tom: ${campaign.tone}`,
     `- Gancho: ${campaign.hook}`,
     '',
-    characters.length
-      ? `Personagens dos jogadores: ${characters.map((c) => `${c.name} (${c.concept})`).join('; ')}`
-      : 'Personagens dos jogadores: ainda nenhum criado.',
+    `Personagens na mesa: ${atTable.length ? describe(atTable) : 'nenhum'}`,
   ];
+  if (absent.length) {
+    lines.push(`Personagens ausentes nesta sessão (não aparecem na cena): ${describe(absent)}`);
+  }
   const summary = lastSummary(campaign);
   if (summary) {
     lines.push('', `Resumo da sessão anterior:\n${summary}`);

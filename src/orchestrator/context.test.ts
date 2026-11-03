@@ -4,22 +4,31 @@ import { CONTINUE_PLACEHOLDER } from '../llm/prompts.ts';
 import { appendHistory, createCampaign, endSession, setCharacter, setSecrets, startSession } from '../state/campaign.ts';
 import { HISTORY_WINDOW, buildContext } from './context.ts';
 
-const base = () =>
+const withLia = () =>
   setCharacter(createCampaign('1', { setting: 'Vila costeira', tone: 'mistério', hook: 'Navio vazio' }), {
     userId: 'u1',
     name: 'Lia',
     concept: 'pescadora curiosa',
   });
+const base = () => startSession(withLia(), ['u1']);
 
-test('system includes campaign facts, characters and secrets', () => {
+test('system includes campaign facts, characters at the table and secrets', () => {
   const { system } = buildContext(setSecrets(base(), 'O padre mente.'), '(abra a cena)');
   assert.match(system, /Cenário: Vila costeira/);
-  assert.match(system, /Lia \(pescadora curiosa\)/);
+  assert.match(system, /Personagens na mesa: Lia \(pescadora curiosa\)/);
+  assert.doesNotMatch(system, /ausentes/);
   assert.match(system, /Segredos do mestre[\s\S]*O padre mente\./);
 });
 
+test('characters of players not at the table are listed as absent', () => {
+  const c = startSession(setCharacter(withLia(), { userId: 'u2', name: 'Tomás', concept: 'padre jovem' }), ['u2']);
+  const { system } = buildContext(c, '(abra a cena)');
+  assert.match(system, /Personagens na mesa: Tomás \(padre jovem\)/);
+  assert.match(system, /ausentes nesta sessão[^\n]*Lia/);
+});
+
 test('system includes the previous session summary when there is one', () => {
-  const c = startSession(endSession(base(), 'Acharam o diário.'));
+  const c = startSession(endSession(base(), 'Acharam o diário.'), ['u1']);
   assert.match(buildContext(c, '(retome)').system, /Resumo da sessão anterior:\nAcharam o diário\./);
 });
 

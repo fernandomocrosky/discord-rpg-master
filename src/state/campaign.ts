@@ -26,6 +26,7 @@ export interface Session {
   startedAt: string;
   endedAt?: string;
   summary?: string;
+  participants: string[]; // userIds of the players at the table this session
   usage: TokenUsage;
 }
 
@@ -39,6 +40,7 @@ export interface Campaign {
   characters: Record<string, Character>; // key: Discord userId
   history: HistoryEntry[]; // recent entries only; long-term memory lives in session summaries
   sessions: Session[];
+  setupUsage: TokenUsage; // tokens spent creating the campaign (secrets), outside any session
 }
 
 /** How many history entries are stored. The prompt uses an even smaller window. */
@@ -55,12 +57,21 @@ export function createCampaign(
     createdAt: now.toISOString(),
     characters: {},
     history: [],
-    sessions: [newSession(1, now)],
+    sessions: [],
+    setupUsage: emptyUsage(),
   };
 }
 
-function newSession(number: number, now: Date): Session {
-  return { number, startedAt: now.toISOString(), usage: { inputTokens: 0, outputTokens: 0, calls: 0 } };
+function emptyUsage(): TokenUsage {
+  return { inputTokens: 0, outputTokens: 0, calls: 0 };
+}
+
+function addUsage(total: TokenUsage, usage: { inputTokens: number; outputTokens: number }): TokenUsage {
+  return {
+    inputTokens: total.inputTokens + usage.inputTokens,
+    outputTokens: total.outputTokens + usage.outputTokens,
+    calls: total.calls + 1,
+  };
 }
 
 export function setSecrets(campaign: Campaign, secrets: string): Campaign {
@@ -98,12 +109,27 @@ export function sessionHistory(campaign: Campaign): HistoryEntry[] {
   return campaign.history.filter((entry) => entry.at >= session.startedAt);
 }
 
-export function startSession(campaign: Campaign, now = new Date()): Campaign {
+export function startSession(campaign: Campaign, participants: string[], now = new Date()): Campaign {
   if (currentSession(campaign)) {
     throw new Error('Já existe uma sessão em andamento.');
   }
-  const number = (campaign.sessions.at(-1)?.number ?? 0) + 1;
-  return { ...campaign, sessions: [...campaign.sessions, newSession(number, now)] };
+  const session: Session = {
+    number: (campaign.sessions.at(-1)?.number ?? 0) + 1,
+    startedAt: now.toISOString(),
+    participants: [...new Set(participants)],
+    usage: emptyUsage(),
+  };
+  return { ...campaign, sessions: [...campaign.sessions, session] };
+}
+
+/** Adds a late-arriving player to the ongoing session (no-op if already there). */
+export function addParticipant(campaign: Campaign, userId: string): Campaign {
+  const session = currentSession(campaign);
+  if (!session) {
+    throw new Error('Não há sessão em andamento.');
+  }
+  if (session.participants.includes(userId)) return campaign;
+  return replaceCurrentSession(campaign, { ...session, participants: [...session.participants, userId] });
 }
 
 export function endSession(campaign: Campaign, summary: string, now = new Date()): Campaign {
@@ -123,14 +149,15 @@ export function recordUsage(
   if (!session) {
     throw new Error('Não há sessão em andamento.');
   }
-  return replaceCurrentSession(campaign, {
-    ...session,
-    usage: {
-      inputTokens: session.usage.inputTokens + usage.inputTokens,
-      outputTokens: session.usage.outputTokens + usage.outputTokens,
-      calls: session.usage.calls + 1,
-    },
-  });
+  return replaceCurrentSession(campaign, { ...session, usage: addUsage(session.usage, usage) });
+}
+
+/** Adds token usage spent setting up the campaign, before any session. */
+export function recordSetupUsage(
+  campaign: Campaign,
+  usage: { inputTokens: number; outputTokens: number },
+): Campaign {
+  return { ...campaign, setupUsage: addUsage(campaign.setupUsage, usage) };
 }
 
 function replaceCurrentSession(campaign: Campaign, session: Session): Campaign {

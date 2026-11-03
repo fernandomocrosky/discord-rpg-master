@@ -9,9 +9,10 @@ import { JsonCampaignStore } from './state/store.ts';
 const game = createGame({ store: new JsonCampaignStore('data'), generate });
 const commandsByName = new Map(commands.map((command) => [command.data.name, command]));
 
-// Client: the bot's connection to Discord. Intents pick which events it receives;
-// slash commands only need Guilds (no MessageContent: the bot never reads regular chat).
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+// Client: the bot's connection to Discord. Intents pick which events it receives:
+// Guilds for slash commands, GuildVoiceStates to know who is in each voice channel.
+// No MessageContent: the bot never reads regular chat.
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
 
 client.once(Events.ClientReady, (ready) => {
   console.log(`Mestre online como ${ready.user.tag} (modelo: ${config.llmModel}).`);

@@ -9,11 +9,13 @@ import {
 } from '../llm/prompts.ts';
 import { describeRoll, rollDice, type RollResult, type Rng } from '../rules/dice.ts';
 import {
+  addParticipant,
   appendHistory,
   createCampaign,
   currentSession,
   endSession,
   lastSummary,
+  recordSetupUsage,
   recordUsage,
   sessionHistory,
   setCharacter,
@@ -31,6 +33,10 @@ export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
 /** Error whose message is meant for the player (pt-BR). Anything else is an internal error. */
 export class GameError extends Error {}
 
+export type StartSessionResult =
+  | { status: 'started'; characters: Character[]; narration: string }
+  | { status: 'missing-characters'; userIds: string[] };
+
 export interface GameDeps {
   store: CampaignStore;
   generate: Generate;
@@ -46,7 +52,10 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
     return { campaign: updated, text };
   }
 
-  /** Runs `play` on the channel's campaign, requiring an ongoing session and the player's character. */
+  /**
+   * Runs `play` on the channel's campaign, requiring an ongoing session and the player's character.
+   * A player who was not at the table when the session started joins it here.
+   */
   async function withPlayer<T>(
     channelId: string,
     userId: string,
@@ -59,7 +68,7 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       if (!campaign.characters[userId]) {
         throw new GameError('Você ainda não tem personagem. Use /personagem criar.');
       }
-      const outcome = await play(campaign);
+      const outcome = await play(addParticipant(campaign, userId));
       result = outcome.result;
       return outcome.campaign;
     });
@@ -67,27 +76,20 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
   }
 
   return {
-    async newCampaign(channelId: string, input: { setting: string; tone: string; hook: string }): Promise<string> {
-      let narration = '';
+    /** Creates the campaign and its GM secrets. The first scene only opens on startSession. */
+    async newCampaign(channelId: string, input: { setting: string; tone: string; hook: string }): Promise<void> {
       await store.update(channelId, async (current) => {
         if (current) {
           throw new GameError('Este canal já tem uma campanha.');
         }
-        let campaign = createCampaign(channelId, input);
-
         const secrets = await generate({
           system: SECRETS_PROMPT,
           messages: [
             { role: 'user', content: `Cenário: ${input.setting}\nTom: ${input.tone}\nGancho: ${input.hook}` },
           ],
         });
-        campaign = recordUsage(setSecrets(campaign, secrets.text), secrets.usage);
-
-        const opened = await narrate(campaign, OPEN_SCENE_INSTRUCTION);
-        narration = opened.text;
-        return opened.campaign;
+        return recordSetupUsage(setSecrets(createCampaign(channelId, input), secrets.text), secrets.usage);
       });
-      return narration;
     },
 
     async createCharacter(channelId: string, userId: string, input: { name: string; concept: string }): Promise<Character> {
@@ -123,18 +125,36 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       });
     },
 
-    async startSession(channelId: string): Promise<string> {
-      let narration = '';
+    /**
+     * Starts a session with the players at the table. If any of them has no character yet,
+     * nothing changes and their userIds are returned so they can create one first.
+     */
+    async startSession(channelId: string, playerIds: string[]): Promise<StartSessionResult> {
+      let result!: StartSessionResult;
       await store.update(channelId, async (current) => {
         const campaign = requireCampaign(current);
         if (currentSession(campaign)) {
           throw new GameError('Já existe uma sessão em andamento. Use /sessao encerrar antes.');
         }
-        const resumed = await narrate(startSession(campaign), RESUME_SESSION_INSTRUCTION);
-        narration = resumed.text;
-        return resumed.campaign;
+        if (playerIds.length === 0) {
+          throw new GameError('Não há ninguém na mesa.');
+        }
+        const missing = playerIds.filter((id) => !campaign.characters[id]);
+        if (missing.length) {
+          result = { status: 'missing-characters', userIds: missing };
+          return campaign;
+        }
+
+        const isFirstSession = campaign.sessions.length === 0;
+        const { campaign: updated, text } = await narrate(
+          startSession(campaign, playerIds),
+          isFirstSession ? OPEN_SCENE_INSTRUCTION : RESUME_SESSION_INSTRUCTION,
+        );
+        const characters = playerIds.map((id) => campaign.characters[id]!);
+        result = { status: 'started', characters, narration: text };
+        return updated;
       });
-      return narration;
+      return result;
     },
 
     async endSession(channelId: string): Promise<{ summary: string; usage: TokenUsage }> {

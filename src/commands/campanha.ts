@@ -9,7 +9,7 @@ export const campanha: Command = {
     .addSubcommand((sub) =>
       sub
         .setName('nova')
-        .setDescription('Cria a campanha deste canal e abre a primeira cena')
+        .setDescription('Cria a campanha deste canal (a cena abre no /sessao iniciar)')
         .addStringOption((o) =>
           o.setName('cenario').setDescription('Onde e quando a história se passa').setRequired(true).setMaxLength(300),
         )
@@ -21,13 +21,22 @@ export const campanha: Command = {
         ),
     ),
   execute(interaction, game) {
-    // options.getString: reads the value the player typed for an option.
-    return runCommand(interaction, () =>
-      game.newCampaign(interaction.channelId, {
-        setting: interaction.options.getString('cenario', true),
-        tone: interaction.options.getString('tom', true),
+    return runCommand(interaction, async () => {
+      // options.getString: reads the value the player typed for an option.
+      const setting = interaction.options.getString('cenario', true);
+      const tone = interaction.options.getString('tom', true);
+      await game.newCampaign(interaction.channelId, {
+        setting,
+        tone,
         hook: interaction.options.getString('gancho', true),
-      }),
-    );
+      });
+      return [
+        `📖 **Campanha criada!** Cenário: ${setting} · Tom: ${tone}`,
+        '',
+        '1. Cada jogador cria seu personagem com `/personagem criar`.',
+        '2. Com todos no canal de voz, alguém usa `/sessao iniciar` e o mestre abre a primeira cena.',
+        '3. Durante o jogo, use `/acao` para dizer o que faz. Quando o mestre pedir um teste (🎲), **o personagem citado** usa `/rolar`.',
+      ].join('\n');
+    });
   },
 };

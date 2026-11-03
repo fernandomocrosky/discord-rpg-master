@@ -2,11 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_STORED_HISTORY,
+  addParticipant,
   appendHistory,
   createCampaign,
   currentSession,
   endSession,
   lastSummary,
+  recordSetupUsage,
   recordUsage,
   sessionHistory,
   setCharacter,
@@ -15,10 +17,12 @@ import {
 } from './campaign.ts';
 
 const base = () => createCampaign('123', { setting: 'Vila costeira', tone: 'mistério', hook: 'Um navio sem tripulação' });
+const inSession = () => startSession(base(), ['u1']);
 
-test('createCampaign opens session 1', () => {
+test('createCampaign starts with no session open', () => {
   const c = base();
-  assert.equal(currentSession(c)?.number, 1);
+  assert.equal(currentSession(c), undefined);
+  assert.deepEqual(c.sessions, []);
   assert.deepEqual(c.characters, {});
 });
 
@@ -27,6 +31,11 @@ test('setCharacter creates and replaces by userId', () => {
   c = setCharacter(c, { userId: 'u1', name: 'Lia', concept: 'pescadora desconfiada' });
   assert.equal(Object.keys(c.characters).length, 1);
   assert.equal(c.characters.u1?.concept, 'pescadora desconfiada');
+});
+
+test('setSecrets stores GM-only notes', () => {
+  const c = setSecrets(base(), 'O padre quer queimar o diário.');
+  assert.equal(c.secrets, 'O padre quer queimar o diário.');
 });
 
 test('appendHistory keeps only the latest entries', () => {
@@ -38,50 +47,67 @@ test('appendHistory keeps only the latest entries', () => {
   assert.equal(c.history[0]?.text, 'ação 5');
 });
 
+test('startSession records participants without duplicates', () => {
+  const c = startSession(base(), ['u1', 'u2', 'u1']);
+  assert.equal(currentSession(c)?.number, 1);
+  assert.deepEqual(currentSession(c)?.participants, ['u1', 'u2']);
+});
+
+test('addParticipant adds a late player once', () => {
+  let c = addParticipant(inSession(), 'u2');
+  c = addParticipant(c, 'u2');
+  assert.deepEqual(currentSession(c)?.participants, ['u1', 'u2']);
+  assert.throws(() => addParticipant(base(), 'u2'));
+});
+
 test('recordUsage adds tokens to the current session', () => {
-  let c = recordUsage(base(), { inputTokens: 100, outputTokens: 20 });
+  let c = recordUsage(inSession(), { inputTokens: 100, outputTokens: 20 });
   c = recordUsage(c, { inputTokens: 50, outputTokens: 10 });
   assert.deepEqual(currentSession(c)?.usage, { inputTokens: 150, outputTokens: 30, calls: 2 });
+  assert.throws(() => recordUsage(base(), { inputTokens: 1, outputTokens: 1 }));
+});
+
+test('recordSetupUsage tracks campaign creation cost outside sessions', () => {
+  const c = recordSetupUsage(base(), { inputTokens: 80, outputTokens: 40 });
+  assert.deepEqual(c.setupUsage, { inputTokens: 80, outputTokens: 40, calls: 1 });
 });
 
 test('session lifecycle: end, resume with summary, new session starts at zero', () => {
-  let c = endSession(base(), 'Os heróis acharam o diário do capitão.');
+  let c = endSession(inSession(), 'Os heróis acharam o diário do capitão.');
   assert.equal(currentSession(c), undefined);
   assert.equal(lastSummary(c), 'Os heróis acharam o diário do capitão.');
   assert.throws(() => recordUsage(c, { inputTokens: 1, outputTokens: 1 }));
 
-  c = startSession(c);
+  c = startSession(c, ['u2']);
   assert.equal(currentSession(c)?.number, 2);
   assert.equal(currentSession(c)?.usage.calls, 0);
+  assert.deepEqual(currentSession(c)?.participants, ['u2']);
   assert.equal(lastSummary(c), 'Os heróis acharam o diário do capitão.');
 });
 
 test('cannot start two sessions or end without one', () => {
-  assert.throws(() => startSession(base()));
-  assert.throws(() => endSession(endSession(base(), 'x'), 'y'));
-});
-
-test('functions do not mutate the original campaign', () => {
-  const c = base();
-  appendHistory(c, { role: 'gm', text: 'oi' });
-  recordUsage(c, { inputTokens: 1, outputTokens: 1 });
-  assert.equal(c.history.length, 0);
-  assert.equal(currentSession(c)?.usage.calls, 0);
-});
-
-test('setSecrets stores GM-only notes', () => {
-  const c = setSecrets(base(), 'O padre quer queimar o diário.');
-  assert.equal(c.secrets, 'O padre quer queimar o diário.');
+  assert.throws(() => startSession(inSession(), ['u1']));
+  assert.throws(() => endSession(base(), 'x'));
 });
 
 test('sessionHistory returns only entries from the ongoing session', () => {
   const t = (minutes: number) => new Date(Date.UTC(2026, 0, 1, 0, minutes));
-  let c = createCampaign('123', { setting: 's', tone: 't', hook: 'h' }, t(0));
+  let c = startSession(createCampaign('123', { setting: 's', tone: 't', hook: 'h' }, t(0)), ['u1'], t(0));
   c = appendHistory(c, { role: 'gm', text: 'sessão 1' }, t(1));
   c = endSession(c, 'resumo', t(2));
   assert.deepEqual(sessionHistory(c), []);
 
-  c = startSession(c, t(3));
+  c = startSession(c, ['u1'], t(3));
   c = appendHistory(c, { role: 'gm', text: 'sessão 2' }, t(4));
   assert.deepEqual(sessionHistory(c).map((e) => e.text), ['sessão 2']);
+});
+
+test('functions do not mutate the original campaign', () => {
+  const c = inSession();
+  appendHistory(c, { role: 'gm', text: 'oi' });
+  recordUsage(c, { inputTokens: 1, outputTokens: 1 });
+  addParticipant(c, 'u9');
+  assert.equal(c.history.length, 0);
+  assert.equal(currentSession(c)?.usage.calls, 0);
+  assert.deepEqual(currentSession(c)?.participants, ['u1']);
 });
