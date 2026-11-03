@@ -1,4 +1,4 @@
-// Modelo da campanha e funções puras para alterá-la. Não depende de Discord nem de onde o estado é salvo.
+// Campaign model and pure functions to change it. Knows nothing about Discord or where state is stored.
 
 export interface Character {
   userId: string;
@@ -10,7 +10,7 @@ export type HistoryRole = 'player' | 'roll' | 'gm';
 
 export interface HistoryEntry {
   role: HistoryRole;
-  userId?: string; // ausente nas falas do mestre
+  userId?: string; // absent for GM entries
   text: string;
   at: string; // ISO 8601
 }
@@ -35,12 +35,12 @@ export interface Campaign {
   tone: string;
   hook: string;
   createdAt: string;
-  characters: Record<string, Character>; // chave: userId do Discord
-  history: HistoryEntry[]; // só as entradas recentes; a memória de longo prazo fica nos resumos
+  characters: Record<string, Character>; // key: Discord userId
+  history: HistoryEntry[]; // recent entries only; long-term memory lives in session summaries
   sessions: Session[];
 }
 
-/** Quantas entradas de histórico ficam salvas. O prompt usa uma janela ainda menor. */
+/** How many history entries are stored. The prompt uses an even smaller window. */
 export const MAX_STORED_HISTORY = 50;
 
 export function createCampaign(
@@ -75,13 +75,13 @@ export function appendHistory(
   return { ...campaign, history };
 }
 
-/** Sessão em andamento, ou undefined se a última já foi encerrada. */
+/** The ongoing session, or undefined if the last one has ended. */
 export function currentSession(campaign: Campaign): Session | undefined {
   const last = campaign.sessions.at(-1);
   return last && !last.endedAt ? last : undefined;
 }
 
-/** Resumo da última sessão encerrada, usado para retomar a história. */
+/** Summary of the last ended session, used to resume the story. */
 export function lastSummary(campaign: Campaign): string | undefined {
   return campaign.sessions.findLast((s) => s.summary)?.summary;
 }
@@ -102,7 +102,7 @@ export function endSession(campaign: Campaign, summary: string, now = new Date()
   return replaceCurrentSession(campaign, { ...session, endedAt: now.toISOString(), summary });
 }
 
-/** Soma o uso de tokens de uma chamada ao LLM na sessão atual. */
+/** Adds one LLM call's token usage to the current session. */
 export function recordUsage(
   campaign: Campaign,
   usage: { inputTokens: number; outputTokens: number },

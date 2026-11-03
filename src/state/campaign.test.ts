@@ -14,20 +14,20 @@ import {
 
 const base = () => createCampaign('123', { setting: 'Vila costeira', tone: 'mistério', hook: 'Um navio sem tripulação' });
 
-test('createCampaign já abre a sessão 1', () => {
+test('createCampaign opens session 1', () => {
   const c = base();
   assert.equal(currentSession(c)?.number, 1);
   assert.deepEqual(c.characters, {});
 });
 
-test('setCharacter cria e substitui pelo userId', () => {
+test('setCharacter creates and replaces by userId', () => {
   let c = setCharacter(base(), { userId: 'u1', name: 'Lia', concept: 'pescadora curiosa' });
   c = setCharacter(c, { userId: 'u1', name: 'Lia', concept: 'pescadora desconfiada' });
   assert.equal(Object.keys(c.characters).length, 1);
   assert.equal(c.characters.u1?.concept, 'pescadora desconfiada');
 });
 
-test('appendHistory guarda só as últimas entradas', () => {
+test('appendHistory keeps only the latest entries', () => {
   let c = base();
   for (let i = 0; i < MAX_STORED_HISTORY + 5; i++) {
     c = appendHistory(c, { role: 'player', userId: 'u1', text: `ação ${i}` });
@@ -36,13 +36,13 @@ test('appendHistory guarda só as últimas entradas', () => {
   assert.equal(c.history[0]?.text, 'ação 5');
 });
 
-test('recordUsage soma tokens na sessão atual', () => {
+test('recordUsage adds tokens to the current session', () => {
   let c = recordUsage(base(), { inputTokens: 100, outputTokens: 20 });
   c = recordUsage(c, { inputTokens: 50, outputTokens: 10 });
   assert.deepEqual(currentSession(c)?.usage, { inputTokens: 150, outputTokens: 30, calls: 2 });
 });
 
-test('ciclo de sessões: encerrar, retomar com resumo, nova sessão zerada', () => {
+test('session lifecycle: end, resume with summary, new session starts at zero', () => {
   let c = endSession(base(), 'Os heróis acharam o diário do capitão.');
   assert.equal(currentSession(c), undefined);
   assert.equal(lastSummary(c), 'Os heróis acharam o diário do capitão.');
@@ -54,12 +54,12 @@ test('ciclo de sessões: encerrar, retomar com resumo, nova sessão zerada', () 
   assert.equal(lastSummary(c), 'Os heróis acharam o diário do capitão.');
 });
 
-test('não inicia duas sessões nem encerra sem sessão', () => {
+test('cannot start two sessions or end without one', () => {
   assert.throws(() => startSession(base()));
   assert.throws(() => endSession(endSession(base(), 'x'), 'y'));
 });
 
-test('funções não alteram a campanha original', () => {
+test('functions do not mutate the original campaign', () => {
   const c = base();
   appendHistory(c, { role: 'gm', text: 'oi' });
   recordUsage(c, { inputTokens: 1, outputTokens: 1 });

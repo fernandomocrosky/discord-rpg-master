@@ -9,8 +9,9 @@ narrando por voz. Este repositório é o **MVP em forma de bot de Discord**. Ele
 
 Qualquer coisa que não ajude a responder essa pergunta fica fora do MVP: interface própria, pagamento, contas de usuário, multi-servidor.
 
-- Idioma do produto, dos textos do bot e dos comentários no código: **português do Brasil**.
-- Nomes de variáveis, funções e arquivos: **inglês** (padrão da comunidade). Exceção: os nomes dos comandos de barra, que ficam em português (`/rolar`, `/acao`).
+- Idioma do produto e dos textos que o jogador vê (respostas do bot, mensagens de erro exibidas no Discord): **português do Brasil**.
+- Comentários no código, nomes de testes, nomes de variáveis, funções e arquivos, e mensagens de commit: **inglês**. Exceção: os nomes dos comandos de barra, que ficam em português (`/rolar`, `/acao`).
+- Commits seguem o formato `tipo(módulo): o que mudou`, com `tipo` em `feat`, `fix`, `refactor`, `test`, `docs` ou `chore`. Exemplos: `feat(rules): add dice roller`, `fix(state): serialize writes per channel`.
 - Quem desenvolve é um dev fullstack (JS/TS, Vue, PHP) que está fazendo o primeiro bot de Discord. Quando usar uma API do Discord pela primeira vez, explique em uma linha o que ela faz.
 
 ## Stack

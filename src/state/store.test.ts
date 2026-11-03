@@ -17,25 +17,25 @@ async function withStore(fn: (store: JsonCampaignStore) => Promise<void>) {
 
 const newCampaign = () => createCampaign('42', { setting: 's', tone: 't', hook: 'h' });
 
-test('load devolve null para canal sem campanha', () =>
+test('load returns null for a channel without a campaign', () =>
   withStore(async (store) => {
     assert.equal(await store.load('42'), null);
   }));
 
-test('update salva e load lê de volta', () =>
+test('update saves and load reads it back', () =>
   withStore(async (store) => {
     await store.update('42', () => newCampaign());
     const loaded = await store.load('42');
     assert.equal(loaded?.hook, 'h');
   }));
 
-test('updates simultâneos no mesmo canal não se sobrescrevem', () =>
+test('concurrent updates on the same channel do not overwrite each other', () =>
   withStore(async (store) => {
     await store.update('42', () => newCampaign());
     await Promise.all(
       Array.from({ length: 20 }, (_, i) =>
         store.update('42', async (c) => {
-          await new Promise((r) => setTimeout(r, Math.random() * 5)); // simula trabalho assíncrono
+          await new Promise((r) => setTimeout(r, Math.random() * 5)); // simulate async work
           return appendHistory(c!, { role: 'player', userId: 'u', text: `ação ${i}` });
         }),
       ),
@@ -48,7 +48,7 @@ test('updates simultâneos no mesmo canal não se sobrescrevem', () =>
     );
   }));
 
-test('erro dentro de update não salva e não trava a fila', () =>
+test('an error inside update saves nothing and does not block the queue', () =>
   withStore(async (store) => {
     await store.update('42', () => newCampaign());
     await assert.rejects(
@@ -61,7 +61,7 @@ test('erro dentro de update não salva e não trava a fila', () =>
     assert.equal((await store.load('42'))?.history.length, 1);
   }));
 
-test('rejeita channelId que não é ID do Discord', () =>
+test('rejects a channelId that is not a Discord ID', () =>
   withStore(async (store) => {
-    await assert.rejects(store.load('../etc/passwd'), /channelId inválido/);
+    await assert.rejects(store.load('../etc/passwd'), /Invalid channelId/);
   }));

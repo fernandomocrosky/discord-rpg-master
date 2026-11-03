@@ -1,6 +1,6 @@
-// Rolagem de dados. Código puro: o RNG é injetado para os testes serem determinísticos.
+// Dice rolling. Pure code: the RNG is injected so tests are deterministic.
 
-/** Retorna um número em [0, 1), como Math.random. */
+/** Returns a number in [0, 1), like Math.random. */
 export type Rng = () => number;
 
 export interface DiceExpression {
@@ -10,7 +10,7 @@ export interface DiceExpression {
 }
 
 export interface RollResult {
-  expression: string; // forma normalizada, ex.: "1d20+3"
+  expression: string; // normalized form, e.g. "1d20+3"
   rolls: number[];
   modifier: number;
   total: number;
@@ -20,7 +20,7 @@ const MAX_COUNT = 100;
 const MAX_SIDES = 1000;
 const EXPRESSION = /^(\d*)d(\d+)\s*(?:([+-])\s*(\d+))?$/i;
 
-/** Lê expressões como "1d20+3", "2d6", "d8-1". Lança erro com mensagem amigável se for inválida. */
+/** Parses expressions like "1d20+3", "2d6", "d8-1". Throws a player-facing (pt-BR) error if invalid. */
 export function parseDice(input: string): DiceExpression {
   const match = EXPRESSION.exec(input.trim());
   if (!match) {
