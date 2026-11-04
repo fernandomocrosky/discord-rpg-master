@@ -29,6 +29,7 @@ import {
 import type { CampaignStore } from '../state/store.ts';
 import { buildContext, formatEntry } from './context.ts';
 import { parseRollRequest, type RollRequest } from './roll-request.ts';
+import { campaignStatus, type CampaignStatus } from './status.ts';
 
 export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
 
@@ -100,9 +101,15 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       });
     },
 
-    /** The channel's campaign, or null. Includes the GM secrets: never show the whole object to players. */
-    getCampaign(channelId: string): Promise<Campaign | null> {
-      return store.load(channelId);
+    /** What players may see about the channel's campaign (no GM secrets), or null if there is none. */
+    async getStatus(channelId: string): Promise<CampaignStatus | null> {
+      const campaign = await store.load(channelId);
+      return campaign ? campaignStatus(campaign) : null;
+    },
+
+    /** Status of every active campaign. */
+    async listCampaigns(): Promise<CampaignStatus[]> {
+      return (await store.list()).map(campaignStatus);
     },
 
     /** Archives the channel's campaign so a new one can start. An ongoing session is archived as is. */

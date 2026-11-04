@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { appendHistory, createCampaign } from './campaign.ts';
@@ -87,4 +87,17 @@ test('archive waits for a pending update on the same channel', () =>
     await slowUpdate;
     assert.equal(await archived, true);
     assert.equal(await store.load('42'), null); // the update did not recreate the file after archiving
+  }));
+
+test('list returns active campaigns only', () =>
+  withStore(async (store, dir) => {
+    assert.deepEqual(await store.list(), []); // data folder does not exist yet
+    await store.update('1', () => createCampaign('1', { setting: 'a', tone: 't', hook: 'h' }));
+    await store.update('2', () => createCampaign('2', { setting: 'b', tone: 't', hook: 'h' }));
+    await store.update('3', () => createCampaign('3', { setting: 'c', tone: 't', hook: 'h' }));
+    await store.archive('3');
+    await writeFile(path.join(dir, '4.json.tmp'), '{');
+
+    const settings = (await store.list()).map((c) => c.setting).sort();
+    assert.deepEqual(settings, ['a', 'b']);
   }));

@@ -8,6 +8,8 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import type { Game } from '../orchestrator/game.ts';
+import type { CampaignStatus } from '../orchestrator/status.ts';
+import type { Character, TokenUsage } from '../state/campaign.ts';
 import { runCommand } from './reply.ts';
 import type { Command } from './types.ts';
 
@@ -31,11 +33,22 @@ export const campanha: Command = {
           o.setName('gancho').setDescription('O que dá início à história').setRequired(true).setMaxLength(300),
         ),
     )
+    .addSubcommand((sub) => sub.setName('status').setDescription('Mostra a campanha deste canal e em que pé ela está'))
+    .addSubcommand((sub) => sub.setName('lista').setDescription('Lista as campanhas ativas neste servidor'))
     .addSubcommand((sub) =>
       sub.setName('encerrar').setDescription('Encerra (arquiva) a campanha deste canal para começar outra'),
     ),
   execute(interaction, game) {
-    return interaction.options.getSubcommand() === 'nova' ? create(interaction, game) : end(interaction, game);
+    switch (interaction.options.getSubcommand()) {
+      case 'nova':
+        return create(interaction, game);
+      case 'status':
+        return status(interaction, game);
+      case 'lista':
+        return list(interaction, game);
+      default:
+        return end(interaction, game);
+    }
   },
 };
 
@@ -60,7 +73,7 @@ function create(interaction: ChatInputCommandInteraction, game: Game): Promise<v
 }
 
 async function end(interaction: ChatInputCommandInteraction, game: Game): Promise<void> {
-  const campaign = await game.getCampaign(interaction.channelId);
+  const campaign = await game.getStatus(interaction.channelId);
   if (!campaign) {
     await interaction.reply('⚠️ Este canal não tem campanha para encerrar.');
     return;
@@ -104,4 +117,76 @@ async function end(interaction: ChatInputCommandInteraction, game: Game): Promis
     console.error('Error in /campanha encerrar:', error);
     await interaction.editReply({ content: '⚠️ Não consegui encerrar a campanha. Tente de novo.', components: [] });
   }
+}
+
+function status(interaction: ChatInputCommandInteraction, game: Game): Promise<void> {
+  return runCommand(
+    interaction,
+    async () => {
+      const campaign = await game.getStatus(interaction.channelId);
+      if (!campaign) return 'Nenhuma campanha neste canal. Use `/campanha nova`.';
+
+      const lines = [
+        `📖 **${campaign.setting}** · tom: ${campaign.tone}`,
+        `Gancho: ${campaign.hook}`,
+        `-# Criada em ${timestamp(campaign.createdAt, 'd')}`,
+        '',
+        sessionLine(campaign),
+      ];
+      if (campaign.atTable.length) lines.push(`🎭 Na mesa: ${characterList(campaign.atTable)}`);
+      if (campaign.otherCharacters.length) lines.push(`👥 Outros personagens: ${characterList(campaign.otherCharacters)}`);
+      if (campaign.lastSummary) lines.push('', `📜 **Onde paramos:** ${campaign.lastSummary}`);
+
+      const { session, total } = campaign.usage;
+      lines.push(
+        '',
+        `-# Tokens: ${session ? `sessão atual ${formatUsage(session)} · ` : ''}campanha toda ${formatUsage(total)}`,
+      );
+      return lines.join('\n');
+    },
+    { ephemeral: true },
+  );
+}
+
+function list(interaction: ChatInputCommandInteraction, game: Game): Promise<void> {
+  return runCommand(
+    interaction,
+    async () => {
+      // Campaigns are stored per channel; keep only channels of this server.
+      const campaigns = (await game.listCampaigns()).filter((c) => interaction.guild?.channels.cache.has(c.channelId));
+      if (campaigns.length === 0) return 'Nenhuma campanha ativa neste servidor. Use `/campanha nova` em um canal.';
+
+      const lines = campaigns.map((c) => {
+        const players = c.atTable.length + c.otherCharacters.length;
+        // <#id> renders as a clickable channel link.
+        return `• <#${c.channelId}> — **${c.setting}** (${c.tone}) · ${shortSessionState(c)} · ${players} ${players === 1 ? 'personagem' : 'personagens'}`;
+      });
+      return [`📚 **Campanhas ativas neste servidor**`, '', ...lines].join('\n');
+    },
+    { ephemeral: true },
+  );
+}
+
+function sessionLine({ session }: CampaignStatus): string {
+  if (!session) return '⏳ Aguardando a primeira sessão. Com todos no canal de voz, use `/sessao iniciar`.';
+  if (session.ongoing) return `🎬 Sessão ${session.number} em andamento (desde ${timestamp(session.startedAt, 't')})`;
+  return `⏸️ Última sessão: ${session.number}, encerrada ${timestamp(session.endedAt!, 'R')}. Use \`/sessao iniciar\` para continuar.`;
+}
+
+function shortSessionState({ session }: CampaignStatus): string {
+  if (!session) return '⏳ aguardando a 1ª sessão';
+  return session.ongoing ? `🟢 sessão ${session.number} em andamento` : `⏸️ pausada após a sessão ${session.number}`;
+}
+
+function characterList(characters: Character[]): string {
+  return characters.map((c) => `${c.name} (<@${c.userId}>)`).join(', ');
+}
+
+function formatUsage(usage: TokenUsage): string {
+  return `${usage.inputTokens.toLocaleString('pt-BR')} entrada / ${usage.outputTokens.toLocaleString('pt-BR')} saída`;
+}
+
+/** Discord timestamp: <t:unix:style> renders in each viewer's own time zone (d = date, t = time, R = relative). */
+function timestamp(iso: string, style: 'd' | 't' | 'R'): string {
+  return `<t:${Math.floor(Date.parse(iso) / 1000)}:${style}>`;
 }

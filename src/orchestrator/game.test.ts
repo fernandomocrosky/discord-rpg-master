@@ -161,7 +161,7 @@ test('endCampaign archives the campaign and frees the channel', () =>
   withGame(async (ctx) => {
     await playing(ctx);
     await ctx.game.endCampaign(CHANNEL);
-    assert.equal(await ctx.game.getCampaign(CHANNEL), null);
+    assert.equal(await ctx.game.getStatus(CHANNEL), null);
     await assert.rejects(ctx.game.endCampaign(CHANNEL), GameError);
     await ctx.game.newCampaign(CHANNEL, SETUP); // channel is free again
   }));
@@ -182,4 +182,14 @@ test('a roll request in the narration comes back with it', () =>
       goal: 'subir',
       difficulty: 15,
     });
+  }));
+
+test('getStatus and listCampaigns report active campaigns', () =>
+  withGame(async (ctx) => {
+    await playing(ctx);
+    await ctx.game.newCampaign('200', { setting: 'Deserto', tone: 'aventura', hook: 'Oásis seco' });
+
+    assert.equal((await ctx.game.getStatus(CHANNEL))?.session?.ongoing, true);
+    const settings = (await ctx.game.listCampaigns()).map((s) => s.setting).sort();
+    assert.deepEqual(settings, ['Deserto', 'Vila costeira']);
   }));

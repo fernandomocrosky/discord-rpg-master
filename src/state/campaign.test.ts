@@ -15,6 +15,7 @@ import {
   setCharacter,
   setSecrets,
   startSession,
+  totalUsage,
 } from './campaign.ts';
 
 const base = () => createCampaign('123', { setting: 'Vila costeira', tone: 'mistério', hook: 'Um navio sem tripulação' });
@@ -119,4 +120,11 @@ test('charactersAtTable lists only characters of players in the session', () => 
   assert.deepEqual(charactersAtTable(c), []);
   c = startSession(c, ['u2', 'u3']); // u3 has no character
   assert.deepEqual(charactersAtTable(c).map((ch) => ch.name), ['Tomás']);
+});
+
+test('totalUsage sums setup and every session', () => {
+  let c = recordSetupUsage(base(), { inputTokens: 100, outputTokens: 50 });
+  c = recordUsage(startSession(c, ['u1']), { inputTokens: 10, outputTokens: 5 });
+  c = recordUsage(startSession(endSession(c, 'r'), ['u1']), { inputTokens: 1, outputTokens: 1 });
+  assert.deepEqual(totalUsage(c), { inputTokens: 111, outputTokens: 56, calls: 3 });
 });

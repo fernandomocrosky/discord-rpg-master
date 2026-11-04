@@ -1,6 +1,6 @@
 // Campaign persistence. Phase 0: one JSON file per channel.
 // The rest of the code depends only on CampaignStore; phase 1 adds a SQLite implementation.
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Campaign } from './campaign.ts';
 
@@ -16,6 +16,8 @@ export interface CampaignStore {
    * channel for a new one. Serialized with updates. Returns false if there was nothing to archive.
    */
   archive(channelId: string): Promise<boolean>;
+  /** Every active (not archived) campaign. */
+  list(): Promise<Campaign[]>;
 }
 
 export class JsonCampaignStore implements CampaignStore {
@@ -58,6 +60,20 @@ export class JsonCampaignStore implements CampaignStore {
         throw error;
       }
     });
+  }
+
+  async list(): Promise<Campaign[]> {
+    let files: string[];
+    try {
+      files = await readdir(this.dir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    // Only <channelId>.json: skips the archive folder and leftover .tmp files.
+    const channelIds = files.flatMap((file) => /^(\d+)\.json$/.exec(file)?.[1] ?? []);
+    const campaigns = await Promise.all(channelIds.map((id) => this.load(id)));
+    return campaigns.filter((c): c is Campaign => c !== null);
   }
 
   /** Runs `task` after every earlier task on the same channel has finished. */

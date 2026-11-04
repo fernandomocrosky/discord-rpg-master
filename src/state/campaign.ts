@@ -158,6 +158,15 @@ export function recordUsage(
   return replaceCurrentSession(campaign, { ...session, usage: addUsage(session.usage, usage) });
 }
 
+/** Tokens spent on the whole campaign: setup plus every session. */
+export function totalUsage(campaign: Campaign): TokenUsage {
+  return [campaign.setupUsage, ...campaign.sessions.map((s) => s.usage)].reduce((total, usage) => ({
+    inputTokens: total.inputTokens + usage.inputTokens,
+    outputTokens: total.outputTokens + usage.outputTokens,
+    calls: total.calls + usage.calls,
+  }));
+}
+
 /** Adds token usage spent setting up the campaign, before any session. */
 export function recordSetupUsage(
   campaign: Campaign,
