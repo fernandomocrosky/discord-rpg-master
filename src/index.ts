@@ -18,7 +18,7 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBit
 client.once(Events.ClientReady, (ready) => {
   // setPresence: the status line under the bot's name in the member list ("Jogando /ajuda").
   ready.user.setPresence({ activities: [{ name: '/ajuda', type: ActivityType.Playing }] });
-  console.log(`Mestre online como ${ready.user.tag} (modelo: ${config.llmModel}).`);
+  console.log(`Tavola online como ${ready.user.tag} (modelo: ${config.llmModel}).`);
 });
 
 // InteractionCreate fires whenever someone uses a slash command (or a button, menu, etc.).

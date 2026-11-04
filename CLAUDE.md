@@ -1,4 +1,4 @@
-# CLAUDE.md — Mestre de RPG com IA (MVP: bot de Discord)
+# CLAUDE.md — Tavola, mestre de RPG com IA (MVP: bot de Discord)
 
 ## O que é este projeto
 

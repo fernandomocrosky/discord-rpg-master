@@ -6,7 +6,7 @@ export function helpEmbed(): EmbedBuilder {
   // EmbedBuilder: Discord's formatted "card" (colored side bar, title, fields, footer).
   return new EmbedBuilder()
     .setColor(0x8b5cf6)
-    .setTitle('🎲 Mestre — seu mestre de RPG com IA')
+    .setTitle('🎲 Tavola — seu mestre de RPG com IA')
     .setDescription(
       'Eu narro a história, interpreto os NPCs e cuido das regras.\nVocês só decidem o que seus personagens fazem.',
     )
@@ -46,7 +46,7 @@ export function helpEmbed(): EmbedBuilder {
 }
 
 export const ajuda: Command = {
-  data: new SlashCommandBuilder().setName('ajuda').setDescription('Explica como jogar com o Mestre (só você vê)'),
+  data: new SlashCommandBuilder().setName('ajuda').setDescription('Explica como jogar com o Tavola (só você vê)'),
   async execute(interaction) {
     // No LLM call here, so a direct reply fits in Discord's 3-second window (no deferReply needed).
     await interaction.reply({ embeds: [helpEmbed()], flags: MessageFlags.Ephemeral });
