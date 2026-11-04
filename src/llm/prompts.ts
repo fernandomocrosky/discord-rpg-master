@@ -49,8 +49,9 @@ Inclua, em texto curto e direto:
 
 Seja específico e surpreendente, mas coerente com o tom. No máximo 250 palavras.`;
 
-export const SUMMARY_PROMPT = `Resuma a sessão de RPG abaixo em até 3 parágrafos, em português, para o mestre retomar a história na próxima sessão.
-Inclua: onde os personagens estão, o que descobriram, NPCs importantes, pendências e promessas em aberto, e em que etapa está a ameaça.`;
+export const SUMMARY_PROMPT = `Resuma a sessão de RPG abaixo em até 3 parágrafos curtos (no máximo 200 palavras), em português, para o mestre retomar a história na próxima sessão.
+Inclua: onde os personagens estão, o que descobriram, só os NPCs que importam para o que vem a seguir, pendências e promessas em aberto, e em que etapa está a ameaça.
+Escreva texto corrido, sem markdown (sem negrito, títulos ou listas), e só registre fatos: não sugira o que os personagens devem fazer.`;
 
 // Instructions sent as the "user" turn when the GM must speak without a player prompting it.
 export const OPEN_SCENE_INSTRUCTION =
