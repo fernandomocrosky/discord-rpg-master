@@ -94,7 +94,7 @@ O modelo de negócio previsto é **cobrar por sessão agendada**, então o custo
 ```
 DISCORD_TOKEN=        # Developer Portal → Bot → Reset Token
 DISCORD_CLIENT_ID=    # Developer Portal → General Information → Application ID
-DISCORD_GUILD_ID=     # ID do servidor de teste (Modo desenvolvedor → Copiar ID)
+DISCORD_GUILD_IDS=    # IDs dos servidores de teste, separados por vírgula (Modo desenvolvedor → Copiar ID)
 ANTHROPIC_API_KEY=
 LLM_MODEL=
 ```
