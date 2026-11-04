@@ -92,6 +92,18 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       });
     },
 
+    /** The channel's campaign, or null. Includes the GM secrets: never show the whole object to players. */
+    getCampaign(channelId: string): Promise<Campaign | null> {
+      return store.load(channelId);
+    },
+
+    /** Archives the channel's campaign so a new one can start. An ongoing session is archived as is. */
+    async endCampaign(channelId: string): Promise<void> {
+      if (!(await store.archive(channelId))) {
+        throw new GameError('Este canal não tem campanha para encerrar.');
+      }
+    },
+
     async createCharacter(channelId: string, userId: string, input: { name: string; concept: string }): Promise<Character> {
       const character: Character = { userId, ...input };
       await store.update(channelId, (current) => setCharacter(requireCampaign(current), character));

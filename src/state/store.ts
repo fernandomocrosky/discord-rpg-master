@@ -11,6 +11,11 @@ export interface CampaignStore {
    * never overlap. If `change` throws, nothing is saved and the error propagates to the caller.
    */
   update(channelId: string, change: (current: Campaign | null) => Campaign | Promise<Campaign>): Promise<Campaign>;
+  /**
+   * Moves the channel's campaign out of the way (kept for recovery and cost metrics), freeing the
+   * channel for a new one. Serialized with updates. Returns false if there was nothing to archive.
+   */
+  archive(channelId: string): Promise<boolean>;
 }
 
 export class JsonCampaignStore implements CampaignStore {
@@ -33,14 +38,34 @@ export class JsonCampaignStore implements CampaignStore {
     channelId: string,
     change: (current: Campaign | null) => Campaign | Promise<Campaign>,
   ): Promise<Campaign> {
+    return this.enqueue(channelId, async () => {
+      const updated = await change(await this.load(channelId));
+      await this.save(updated);
+      return updated;
+    });
+  }
+
+  archive(channelId: string, now = new Date()): Promise<boolean> {
+    return this.enqueue(channelId, async () => {
+      const archiveDir = path.join(this.dir, 'archive');
+      await mkdir(archiveDir, { recursive: true });
+      const stamp = now.toISOString().replace(/[:.]/g, '-'); // ':' is not allowed in Windows file names
+      try {
+        await rename(this.filePath(channelId), path.join(archiveDir, `${channelId}-${stamp}.json`));
+        return true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+        throw error;
+      }
+    });
+  }
+
+  /** Runs `task` after every earlier task on the same channel has finished. */
+  private enqueue<T>(channelId: string, task: () => Promise<T>): Promise<T> {
     const previous = this.queues.get(channelId) ?? Promise.resolve();
     const next = previous
-      .catch(() => {}) // a failed previous update must not block the queue
-      .then(async () => {
-        const updated = await change(await this.load(channelId));
-        await this.save(updated);
-        return updated;
-      });
+      .catch(() => {}) // a failed previous task must not block the queue
+      .then(task);
     this.queues.set(channelId, next);
     // Drop the queue entry once nothing is waiting, so the Map does not grow forever.
     next.finally(() => {

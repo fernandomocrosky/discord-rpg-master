@@ -156,3 +156,12 @@ test('session lifecycle: end with summary and usage, then resume', () =>
     assert.equal(currentSession((await store.load(CHANNEL))!)?.number, 2);
     await assert.rejects(game.startSession(CHANNEL, ['u1']), GameError);
   }));
+
+test('endCampaign archives the campaign and frees the channel', () =>
+  withGame(async (ctx) => {
+    await playing(ctx);
+    await ctx.game.endCampaign(CHANNEL);
+    assert.equal(await ctx.game.getCampaign(CHANNEL), null);
+    await assert.rejects(ctx.game.endCampaign(CHANNEL), GameError);
+    await ctx.game.newCampaign(CHANNEL, SETUP); // channel is free again
+  }));
