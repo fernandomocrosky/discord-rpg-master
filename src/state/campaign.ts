@@ -1,9 +1,16 @@
 // Campaign model and pure functions to change it. Knows nothing about Discord or where state is stored.
+import { NEUTRAL_ATTRIBUTES, type Attributes } from '../rules/checks.ts';
 
 export interface Character {
   userId: string;
   name: string;
   concept: string;
+  attributes?: Attributes; // absent on characters created before attributes existed
+}
+
+/** The character's attributes; older characters without them count as +0 everywhere. */
+export function characterAttributes(character: Character): Attributes {
+  return character.attributes ?? NEUTRAL_ATTRIBUTES;
 }
 
 export type HistoryRole = 'player' | 'roll' | 'gm';

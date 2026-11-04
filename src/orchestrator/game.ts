@@ -7,6 +7,7 @@ import {
   SECRETS_PROMPT,
   SUMMARY_PROMPT,
 } from '../llm/prompts.ts';
+import { buildAttributes, type Attribute, type Attributes } from '../rules/checks.ts';
 import { describeRoll, rollDice, type RollResult, type Rng } from '../rules/dice.ts';
 import {
   addParticipant,
@@ -119,8 +120,18 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       }
     },
 
-    async createCharacter(channelId: string, userId: string, input: { name: string; concept: string }): Promise<Character> {
-      const character: Character = { userId, ...input };
+    async createCharacter(
+      channelId: string,
+      userId: string,
+      input: { name: string; concept: string; profile: { strong: Attribute; good: Attribute; weak: Attribute } },
+    ): Promise<Character> {
+      let attributes: Attributes;
+      try {
+        attributes = buildAttributes(input.profile);
+      } catch (error) {
+        throw new GameError((error as Error).message);
+      }
+      const character: Character = { userId, name: input.name, concept: input.concept, attributes };
       await store.update(channelId, (current) => setCharacter(requireCampaign(current), character));
       return character;
     },

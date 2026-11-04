@@ -4,6 +4,7 @@ import {
   MAX_STORED_HISTORY,
   addParticipant,
   appendHistory,
+  characterAttributes,
   charactersAtTable,
   createCampaign,
   currentSession,
@@ -127,4 +128,15 @@ test('totalUsage sums setup and every session', () => {
   c = recordUsage(startSession(c, ['u1']), { inputTokens: 10, outputTokens: 5 });
   c = recordUsage(startSession(endSession(c, 'r'), ['u1']), { inputTokens: 1, outputTokens: 1 });
   assert.deepEqual(totalUsage(c), { inputTokens: 111, outputTokens: 56, calls: 3 });
+});
+
+test('characterAttributes defaults older characters to +0', () => {
+  assert.deepEqual(characterAttributes({ userId: 'u1', name: 'Lia', concept: 'x' }), {
+    forca: 0,
+    agilidade: 0,
+    mente: 0,
+    presenca: 0,
+  });
+  const attributes = { forca: 2, agilidade: 1, mente: 0, presenca: -1 };
+  assert.deepEqual(characterAttributes({ userId: 'u1', name: 'Lia', concept: 'x', attributes }), attributes);
 });

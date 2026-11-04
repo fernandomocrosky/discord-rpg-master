@@ -11,6 +11,7 @@ import { GameError, createGame, type Generate } from './game.ts';
 
 const CHANNEL = '100';
 const SETUP = { setting: 'Vila costeira', tone: 'mistério', hook: 'Navio vazio' };
+const PROFILE = { strong: 'agilidade', good: 'mente', weak: 'presenca' } as const;
 
 /** Fake LLM: records every call and answers with a numbered reply costing 10 in / 5 out tokens. */
 function fakeLlm() {
@@ -39,7 +40,7 @@ async function withGame(fn: (ctx: Ctx) => Promise<void>, generate?: Generate) {
 /** Campaign with Lia (u1) created and session 1 started with her at the table. */
 async function playing({ game }: Ctx) {
   await game.newCampaign(CHANNEL, SETUP);
-  await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora' });
+  await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora', profile: PROFILE });
   await game.startSession(CHANNEL, ['u1']);
 }
 
@@ -58,14 +59,14 @@ test('newCampaign only generates secrets: no scene, no session', () =>
 test('startSession waits until everyone at the table has a character', () =>
   withGame(async ({ game, store, llm }) => {
     await game.newCampaign(CHANNEL, SETUP);
-    await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora' });
+    await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora', profile: PROFILE });
 
     const blocked = await game.startSession(CHANNEL, ['u1', 'u2']);
     assert.deepEqual(blocked, { status: 'missing-characters', userIds: ['u2'] });
     assert.equal(currentSession((await store.load(CHANNEL))!), undefined);
     assert.equal(llm.calls.length, 1); // only the secrets call
 
-    await game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre' });
+    await game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre', profile: PROFILE });
     const started = await game.startSession(CHANNEL, ['u1', 'u2']);
     assert.equal(started.status, 'started');
     assert.equal(llm.calls.at(-1)!.messages.at(-1)?.content, OPEN_SCENE_INSTRUCTION);
@@ -84,7 +85,7 @@ test('player actions require a campaign, a session and a character', () =>
     await assert.rejects(game.playerAction(CHANNEL, 'u1', 'olho em volta'), /\/campanha nova/);
     await game.newCampaign(CHANNEL, SETUP);
     await assert.rejects(game.playerAction(CHANNEL, 'u1', 'olho em volta'), /\/sessao iniciar/);
-    await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora' });
+    await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora', profile: PROFILE });
     await game.startSession(CHANNEL, ['u1']);
     await assert.rejects(game.playerAction(CHANNEL, 'u2', 'olho em volta'), /\/personagem criar/);
   }));
@@ -103,7 +104,7 @@ test('playerAction records the action and the narration', () =>
 test('a late player joins the table on their first action', () =>
   withGame(async (ctx) => {
     await playing(ctx);
-    await ctx.game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre' });
+    await ctx.game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre', profile: PROFILE });
     await ctx.game.playerAction(CHANNEL, 'u2', 'entro correndo');
 
     assert.deepEqual(currentSession((await ctx.store.load(CHANNEL))!)?.participants, ['u1', 'u2']);
@@ -192,4 +193,19 @@ test('getStatus and listCampaigns report active campaigns', () =>
     assert.equal((await ctx.game.getStatus(CHANNEL))?.session?.ongoing, true);
     const settings = (await ctx.game.listCampaigns()).map((s) => s.setting).sort();
     assert.deepEqual(settings, ['Deserto', 'Vila costeira']);
+  }));
+
+test('createCharacter builds attributes and rejects a repeated pick', () =>
+  withGame(async ({ game }) => {
+    await game.newCampaign(CHANNEL, SETUP);
+    const lia = await game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora', profile: PROFILE });
+    assert.deepEqual(lia.attributes, { forca: 0, agilidade: 2, mente: 1, presenca: -1 });
+    await assert.rejects(
+      game.createCharacter(CHANNEL, 'u2', {
+        name: 'Tomás',
+        concept: 'padre',
+        profile: { strong: 'forca', good: 'forca', weak: 'mente' },
+      }),
+      GameError,
+    );
   }));

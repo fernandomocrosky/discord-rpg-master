@@ -15,7 +15,7 @@ const base = () => startSession(withLia(), ['u1']);
 test('system includes campaign facts, characters at the table and secrets', () => {
   const { system } = buildContext(setSecrets(base(), 'O padre mente.'), '(abra a cena)');
   assert.match(system, /Cenário: Vila costeira/);
-  assert.match(system, /Personagens na mesa: Lia \(pescadora curiosa\)/);
+  assert.match(system, /Personagens na mesa: Lia \(pescadora curiosa; Força \+0, Agilidade \+0, Mente \+0, Presença \+0\)/);
   assert.doesNotMatch(system, /ausentes/);
   assert.match(system, /Segredos do mestre[\s\S]*O padre mente\./);
 });
@@ -23,7 +23,7 @@ test('system includes campaign facts, characters at the table and secrets', () =
 test('characters of players not at the table are listed as absent', () => {
   const c = startSession(setCharacter(withLia(), { userId: 'u2', name: 'Tomás', concept: 'padre jovem' }), ['u2']);
   const { system } = buildContext(c, '(abra a cena)');
-  assert.match(system, /Personagens na mesa: Tomás \(padre jovem\)/);
+  assert.match(system, /Personagens na mesa: Tomás \(padre jovem;/);
   assert.match(system, /ausentes nesta sessão[^\n]*Lia/);
 });
 

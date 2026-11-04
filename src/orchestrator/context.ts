@@ -1,7 +1,8 @@
 // Builds what the LLM sees on each call: GM prompt + campaign facts + a short window of recent history.
 import type Anthropic from '@anthropic-ai/sdk';
 import { CONTINUE_PLACEHOLDER, GM_SYSTEM_PROMPT } from '../llm/prompts.ts';
-import { charactersAtTable, lastSummary, type Campaign, type Character, type HistoryEntry } from '../state/campaign.ts';
+import { ATTRIBUTES, ATTRIBUTE_LABELS, formatModifier } from '../rules/checks.ts';
+import { characterAttributes, charactersAtTable, lastSummary, type Campaign, type Character, type HistoryEntry } from '../state/campaign.ts';
 
 /** How many recent history entries go into the prompt. */
 export const HISTORY_WINDOW = 12;
@@ -38,7 +39,7 @@ function campaignBlock(campaign: Campaign): string {
   // Only characters whose players are at the table take part in the scene.
   const atTable = charactersAtTable(campaign);
   const absent = Object.values(campaign.characters).filter((c) => !atTable.includes(c));
-  const describe = (list: Character[]) => list.map((c) => `${c.name} (${c.concept})`).join('; ');
+  const describe = (list: Character[]) => list.map(describeCharacter).join('; ');
 
   const lines = [
     'Campanha:',
@@ -59,6 +60,13 @@ function campaignBlock(campaign: Campaign): string {
     lines.push('', `Segredos do mestre (nunca revele diretamente):\n${campaign.secrets}`);
   }
   return lines.join('\n');
+}
+
+/** e.g. "Lia (pescadora curiosa; Força +0, Agilidade +2, Mente +1, Presença -1)". */
+function describeCharacter(character: Character): string {
+  const attributes = characterAttributes(character);
+  const stats = ATTRIBUTES.map((a) => `${ATTRIBUTE_LABELS[a]} ${formatModifier(attributes[a])}`).join(', ');
+  return `${character.name} (${character.concept}; ${stats})`;
 }
 
 /** Turns a history entry into text, e.g. "Lia: abro a porta" or "Lia rolou 1d20+2 = 17 (15 + 2)". */
