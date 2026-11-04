@@ -1,5 +1,5 @@
 // Bot entrypoint: creates the Discord client, wires commands to the game and logs in.
-import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { ActivityType, Client, Events, GatewayIntentBits } from 'discord.js';
 import { handleButton } from './commands/buttons.ts';
 import { commands } from './commands/index.ts';
 import { config } from './config.ts';
@@ -16,6 +16,8 @@ const commandsByName = new Map(commands.map((command) => [command.data.name, com
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates] });
 
 client.once(Events.ClientReady, (ready) => {
+  // setPresence: the status line under the bot's name in the member list ("Jogando /ajuda").
+  ready.user.setPresence({ activities: [{ name: '/ajuda', type: ActivityType.Playing }] });
   console.log(`Mestre online como ${ready.user.tag} (modelo: ${config.llmModel}).`);
 });
 
