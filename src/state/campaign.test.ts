@@ -4,6 +4,7 @@ import {
   MAX_STORED_HISTORY,
   addParticipant,
   appendHistory,
+  charactersAtTable,
   createCampaign,
   currentSession,
   endSession,
@@ -110,4 +111,12 @@ test('functions do not mutate the original campaign', () => {
   assert.equal(c.history.length, 0);
   assert.equal(currentSession(c)?.usage.calls, 0);
   assert.deepEqual(currentSession(c)?.participants, ['u1']);
+});
+
+test('charactersAtTable lists only characters of players in the session', () => {
+  let c = setCharacter(base(), { userId: 'u1', name: 'Lia', concept: 'pescadora' });
+  c = setCharacter(c, { userId: 'u2', name: 'Tomás', concept: 'padre' });
+  assert.deepEqual(charactersAtTable(c), []);
+  c = startSession(c, ['u2', 'u3']); // u3 has no character
+  assert.deepEqual(charactersAtTable(c).map((ch) => ch.name), ['Tomás']);
 });

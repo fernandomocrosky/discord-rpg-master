@@ -1,4 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
+import { narrationReply } from './buttons.ts';
 import { runCommand } from './reply.ts';
 import type { Command } from './types.ts';
 
@@ -13,7 +14,7 @@ export const acao: Command = {
       const narration = await game.playerAction(interaction.channelId, interaction.user.id, text);
       const character = await game.getCharacter(interaction.channelId, interaction.user.id);
       // Echo the action so the channel reads like a table log.
-      return `> **${character?.name ?? interaction.user.displayName}:** ${text}\n\n${narration}`;
+      return narrationReply(`> **${character?.name ?? interaction.user.displayName}:** ${text}`, narration);
     });
   },
 };

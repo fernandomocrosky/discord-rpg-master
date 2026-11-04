@@ -11,6 +11,7 @@ import { describeRoll, rollDice, type RollResult, type Rng } from '../rules/dice
 import {
   addParticipant,
   appendHistory,
+  charactersAtTable,
   createCampaign,
   currentSession,
   endSession,
@@ -27,14 +28,21 @@ import {
 } from '../state/campaign.ts';
 import type { CampaignStore } from '../state/store.ts';
 import { buildContext, formatEntry } from './context.ts';
+import { parseRollRequest, type RollRequest } from './roll-request.ts';
 
 export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
 
 /** Error whose message is meant for the player (pt-BR). Anything else is an internal error. */
 export class GameError extends Error {}
 
+/** What the GM said, plus the roll it asked for (if any). */
+export interface Narration {
+  text: string;
+  rollRequest: RollRequest | null;
+}
+
 export type StartSessionResult =
-  | { status: 'started'; characters: Character[]; narration: string }
+  | { status: 'started'; characters: Character[]; narration: Narration }
   | { status: 'missing-characters'; userIds: string[] };
 
 export interface GameDeps {
@@ -45,11 +53,11 @@ export interface GameDeps {
 
 export function createGame({ store, generate, rng = Math.random }: GameDeps) {
   /** Calls the LLM with the current context, records its narration and token usage. */
-  async function narrate(campaign: Campaign, instruction?: string): Promise<{ campaign: Campaign; text: string }> {
+  async function narrate(campaign: Campaign, instruction?: string): Promise<{ campaign: Campaign; narration: Narration }> {
     const { text, usage } = await generate(buildContext(campaign, instruction));
     let updated = appendHistory(campaign, { role: 'gm', text });
     updated = recordUsage(updated, usage);
-    return { campaign: updated, text };
+    return { campaign: updated, narration: { text, rollRequest: parseRollRequest(text, charactersAtTable(updated)) } };
   }
 
   /**
@@ -115,15 +123,15 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       return campaign?.characters[userId] ?? null;
     },
 
-    playerAction(channelId: string, userId: string, text: string): Promise<string> {
+    playerAction(channelId: string, userId: string, text: string): Promise<Narration> {
       return withPlayer(channelId, userId, async (campaign) => {
         const withAction = appendHistory(campaign, { role: 'player', userId, text });
-        const { campaign: updated, text: narration } = await narrate(withAction);
+        const { campaign: updated, narration } = await narrate(withAction);
         return { campaign: updated, result: narration };
       });
     },
 
-    playerRoll(channelId: string, userId: string, expression: string): Promise<{ roll: RollResult; narration: string }> {
+    playerRoll(channelId: string, userId: string, expression: string): Promise<{ roll: RollResult; narration: Narration }> {
       return withPlayer(channelId, userId, async (campaign) => {
         let roll: RollResult;
         try {
@@ -132,7 +140,7 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
           throw new GameError((error as Error).message);
         }
         const withRoll = appendHistory(campaign, { role: 'roll', userId, text: describeRoll(roll) });
-        const { campaign: updated, text: narration } = await narrate(withRoll);
+        const { campaign: updated, narration } = await narrate(withRoll);
         return { campaign: updated, result: { roll, narration } };
       });
     },
@@ -158,12 +166,12 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
         }
 
         const isFirstSession = campaign.sessions.length === 0;
-        const { campaign: updated, text } = await narrate(
+        const { campaign: updated, narration } = await narrate(
           startSession(campaign, playerIds),
           isFirstSession ? OPEN_SCENE_INSTRUCTION : RESUME_SESSION_INSTRUCTION,
         );
         const characters = playerIds.map((id) => campaign.characters[id]!);
-        result = { status: 'started', characters, narration: text };
+        result = { status: 'started', characters, narration };
         return updated;
       });
       return result;

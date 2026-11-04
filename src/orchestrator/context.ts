@@ -1,7 +1,7 @@
 // Builds what the LLM sees on each call: GM prompt + campaign facts + a short window of recent history.
 import type Anthropic from '@anthropic-ai/sdk';
 import { CONTINUE_PLACEHOLDER, GM_SYSTEM_PROMPT } from '../llm/prompts.ts';
-import { currentSession, lastSummary, type Campaign, type Character, type HistoryEntry } from '../state/campaign.ts';
+import { charactersAtTable, lastSummary, type Campaign, type Character, type HistoryEntry } from '../state/campaign.ts';
 
 /** How many recent history entries go into the prompt. */
 export const HISTORY_WINDOW = 12;
@@ -36,10 +36,8 @@ export function buildContext(campaign: Campaign, instruction?: string): LlmConte
 
 function campaignBlock(campaign: Campaign): string {
   // Only characters whose players are at the table take part in the scene.
-  const participants = new Set(currentSession(campaign)?.participants ?? []);
-  const characters = Object.values(campaign.characters);
-  const atTable = characters.filter((c) => participants.has(c.userId));
-  const absent = characters.filter((c) => !participants.has(c.userId));
+  const atTable = charactersAtTable(campaign);
+  const absent = Object.values(campaign.characters).filter((c) => !atTable.includes(c));
   const describe = (list: Character[]) => list.map((c) => `${c.name} (${c.concept})`).join('; ');
 
   const lines = [

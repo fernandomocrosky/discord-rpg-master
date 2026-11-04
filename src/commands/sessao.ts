@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 import { GameError, type Game } from '../orchestrator/game.ts';
-import { runCommand } from './reply.ts';
+import { narrationReply } from './buttons.ts';
+import { runCommand, type ReplyContent } from './reply.ts';
 import type { Command } from './types.ts';
 
 export const sessao: Command = {
@@ -18,7 +19,7 @@ export const sessao: Command = {
   },
 };
 
-async function start(interaction: ChatInputCommandInteraction, game: Game): Promise<string> {
+async function start(interaction: ChatInputCommandInteraction, game: Game): Promise<ReplyContent> {
   // inCachedGuild: narrows the type so member/guild data come from the bot's cache (full objects).
   if (!interaction.inCachedGuild()) {
     throw new GameError('Use este comando dentro de um servidor.');
@@ -43,7 +44,7 @@ async function start(interaction: ChatInputCommandInteraction, game: Game): Prom
     );
   }
   const table = result.characters.map((c) => `**${c.name}** (<@${c.userId}>)`).join(', ');
-  return `🎭 Na mesa: ${table}\n\n${result.narration}`;
+  return narrationReply(`🎭 Na mesa: ${table}`, result.narration);
 }
 
 async function end(interaction: ChatInputCommandInteraction, game: Game): Promise<string> {

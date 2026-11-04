@@ -1,5 +1,6 @@
 // Bot entrypoint: creates the Discord client, wires commands to the game and logs in.
 import { Client, Events, GatewayIntentBits } from 'discord.js';
+import { handleButton } from './commands/buttons.ts';
 import { commands } from './commands/index.ts';
 import { config } from './config.ts';
 import { generate } from './llm/client.ts';
@@ -20,6 +21,10 @@ client.once(Events.ClientReady, (ready) => {
 
 // InteractionCreate fires whenever someone uses a slash command (or a button, menu, etc.).
 client.on(Events.InteractionCreate, async (interaction) => {
+  if (interaction.isButton()) {
+    await handleButton(interaction, game).catch((error) => console.error('Failed to handle button:', error));
+    return;
+  }
   if (!interaction.isChatInputCommand()) return;
   const command = commandsByName.get(interaction.commandName);
   if (!command) {

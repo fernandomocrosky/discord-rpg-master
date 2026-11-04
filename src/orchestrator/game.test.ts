@@ -94,7 +94,7 @@ test('playerAction records the action and the narration', () =>
     await playing(ctx);
     const narration = await ctx.game.playerAction(CHANNEL, 'u1', 'subo a bordo');
 
-    assert.equal(narration, 'resposta 3');
+    assert.deepEqual(narration, { text: 'resposta 3', rollRequest: null });
     assert.equal(ctx.llm.calls[2]!.messages.at(-1)?.content, 'Lia: subo a bordo');
     const history = (await ctx.store.load(CHANNEL))!.history;
     assert.deepEqual(history.slice(-2).map((h) => h.text), ['subo a bordo', 'resposta 3']);
@@ -164,4 +164,22 @@ test('endCampaign archives the campaign and frees the channel', () =>
     assert.equal(await ctx.game.getCampaign(CHANNEL), null);
     await assert.rejects(ctx.game.endCampaign(CHANNEL), GameError);
     await ctx.game.newCampaign(CHANNEL, SETUP); // channel is free again
+  }));
+
+test('a roll request in the narration comes back with it', () =>
+  withGame(async (ctx) => {
+    await playing(ctx);
+    const llm: Generate = async () => ({
+      text: 'A corda range.\n\n🎲 Lia, role /rolar 1d20 para subir (dificuldade 15)',
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    const game = createGame({ store: ctx.store, generate: llm });
+    const narration = await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
+    assert.deepEqual(narration.rollRequest, {
+      userId: 'u1',
+      characterName: 'Lia',
+      expression: '1d20',
+      goal: 'subir',
+      difficulty: 15,
+    });
   }));

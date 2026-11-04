@@ -97,6 +97,12 @@ export function currentSession(campaign: Campaign): Session | undefined {
   return last && !last.endedAt ? last : undefined;
 }
 
+/** Characters whose players are at the table in the ongoing session. */
+export function charactersAtTable(campaign: Campaign): Character[] {
+  const participants = currentSession(campaign)?.participants ?? [];
+  return participants.flatMap((id) => campaign.characters[id] ?? []);
+}
+
 /** Summary of the last ended session, used to resume the story. */
 export function lastSummary(campaign: Campaign): string | undefined {
   return campaign.sessions.findLast((s) => s.summary)?.summary;
