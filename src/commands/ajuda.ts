@@ -15,7 +15,7 @@ export function helpEmbed(): EmbedBuilder {
         name: '▸ Como começar',
         value: [
           '1. `/campanha nova` — escolham cenário, tom e gancho',
-          '2. `/personagem criar` — cada jogador cria o seu',
+          '2. `/personagem criar` — cada jogador cria o seu e escolhe ponto forte (+2), bom (+1) e fraco (-1)',
           '3. Entrem no canal de voz e usem `/sessao iniciar`',
         ].join('\n'),
       },
@@ -23,8 +23,10 @@ export function helpEmbed(): EmbedBuilder {
         name: '▸ Durante o jogo',
         value: [
           '`/acao` — diga o que seu personagem faz ou fala',
-          '🎲 Quando eu pedir um teste, clique no botão (ou use `/rolar`)',
-          '`/ficha` — veja seu personagem (só você vê)',
+          '👉 Quando eu marcar você, é a sua vez',
+          '🎲 Quando eu pedir um teste, quem foi marcado clica no botão: rolo 1d20 + o atributo e comparo com a dificuldade',
+          '`/ficha` — veja seu personagem e atributos (só você vê)',
+          '`/rolar` — rolagem livre, ex.: dano (`2d6+1`)',
         ].join('\n'),
       },
       {

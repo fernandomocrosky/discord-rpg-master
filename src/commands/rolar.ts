@@ -7,7 +7,7 @@ import type { Command } from './types.ts';
 export const rolar: Command = {
   data: new SlashCommandBuilder()
     .setName('rolar')
-    .setDescription('Rola dados, ex.: 1d20+3, 2d6, d8-1')
+    .setDescription('Rolagem livre (ex.: dano): 1d20+3, 2d6, d8-1. Testes pedidos pelo mestre usam o botão')
     .addStringOption((o) => o.setName('expressao').setDescription('Ex.: 1d20+3').setRequired(true).setMaxLength(20)),
   execute(interaction, game) {
     return runCommand(interaction, async () => {

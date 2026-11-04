@@ -67,7 +67,7 @@ function create(interaction: ChatInputCommandInteraction, game: Game): Promise<v
       '',
       '1. Cada jogador cria seu personagem com `/personagem criar`.',
       '2. Com todos no canal de voz, alguém usa `/sessao iniciar` e o mestre abre a primeira cena.',
-      '3. Durante o jogo, use `/acao` para dizer o que faz. Quando o mestre pedir um teste (🎲), **o personagem citado** clica no botão ou usa `/rolar`.',
+      '3. Durante o jogo, use `/acao` para dizer o que faz. Quando o mestre pedir um teste (🎲), **quem foi marcado** clica no botão.',
       '',
       '-# Dúvidas? Use `/ajuda`.',
     ].join('\n');
