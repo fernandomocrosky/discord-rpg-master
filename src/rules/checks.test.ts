@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Rng } from './dice.ts';
-import { buildAttributes, describeCheck, formatModifier, gradeCheck, parseAttribute, rollCheck } from './checks.ts';
+import { buildAttributes, describeCheck, describeMargin, formatModifier, gradeCheck, parseAttribute, rollCheck } from './checks.ts';
 
 /** RNG that makes the d20 land on `face`. */
 const d20 = (face: number): Rng => () => (face - 1) / 20;
@@ -60,7 +60,14 @@ test('rollCheck adds the modifier and compares with the difficulty', () => {
 test('describeCheck tells the GM the numbers and the verdict', () => {
   assert.equal(
     describeCheck(rollCheck('agilidade', 2, 15, d20(14))),
-    'teste de Agilidade: 1d20 (14) +2 = 16 contra dificuldade 15 → Sucesso por 1 (consegue)',
+    'teste de Agilidade: 1d20 (14) +2 = 16 contra dificuldade 15 → Sucesso, passou por 1 (consegue)',
   );
-  assert.match(describeCheck(rollCheck('mente', -1, 15, d20(16))), /= 15 contra dificuldade 15 → Sucesso no limite/);
+  assert.match(describeCheck(rollCheck('mente', -1, 15, d20(16))), /= 15 contra dificuldade 15 → Sucesso, no limite/);
+});
+
+test('describeMargin reads naturally', () => {
+  assert.equal(describeMargin(3), 'passou por 3');
+  assert.equal(describeMargin(0), 'no limite');
+  assert.equal(describeMargin(-1), 'faltou 1');
+  assert.equal(describeMargin(-4), 'faltaram 4');
 });

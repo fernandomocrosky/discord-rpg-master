@@ -95,7 +95,7 @@ test('playerAction records the action and the narration', () =>
     await playing(ctx);
     const narration = await ctx.game.playerAction(CHANNEL, 'u1', 'subo a bordo');
 
-    assert.deepEqual(narration, { text: 'resposta 3', rollRequest: null });
+    assert.deepEqual(narration, { text: 'resposta 3', callToAction: null });
     assert.equal(ctx.llm.calls[2]!.messages.at(-1)?.content, 'Lia: subo a bordo');
     const history = (await ctx.store.load(CHANNEL))!.history;
     assert.deepEqual(history.slice(-2).map((h) => h.text), ['subo a bordo', 'resposta 3']);
@@ -167,22 +167,46 @@ test('endCampaign archives the campaign and frees the channel', () =>
     await ctx.game.newCampaign(CHANNEL, SETUP); // channel is free again
   }));
 
-test('a roll request in the narration comes back with it', () =>
+test('the closing call to action is split from the narration', () =>
   withGame(async (ctx) => {
     await playing(ctx);
     const llm: Generate = async () => ({
-      text: 'A corda range.\n\n🎲 Lia, role /rolar 1d20 para subir (dificuldade 15)',
+      text: 'A corda range.\n\n🎲 Lia, teste de Agilidade para subir (dificuldade 15)',
       usage: { inputTokens: 1, outputTokens: 1 },
     });
     const game = createGame({ store: ctx.store, generate: llm });
     const narration = await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
-    assert.deepEqual(narration.rollRequest, {
+    assert.equal(narration.text, 'A corda range.');
+    assert.deepEqual(narration.callToAction, {
+      kind: 'check',
       userId: 'u1',
       characterName: 'Lia',
-      expression: '1d20',
-      goal: 'subir',
+      attribute: 'agilidade',
+      modifier: 2,
       difficulty: 15,
+      goal: 'subir',
     });
+    // History keeps the raw text so the GM keeps seeing its own format.
+    assert.match((await ctx.store.load(CHANNEL))!.history.at(-1)!.text, /🎲 Lia, teste de Agilidade/);
+  }));
+
+test('playerCheck rolls 1d20 + attribute in code and gives the GM the verdict', () =>
+  withGame(async (ctx) => {
+    await playing(ctx); // rng 0.5 → d20 lands on 11; Lia has Agilidade +2
+    const { check } = await ctx.game.playerCheck(CHANNEL, 'u1', 'agilidade', 15);
+    assert.deepEqual(check, {
+      attribute: 'agilidade',
+      die: 11,
+      modifier: 2,
+      total: 13,
+      difficulty: 15,
+      margin: -2,
+      grade: 'close',
+    });
+    assert.equal(
+      ctx.llm.calls.at(-1)!.messages.at(-1)?.content,
+      'Lia fez teste de Agilidade: 1d20 (11) +2 = 13 contra dificuldade 15 → Por pouco, faltaram 2 (consegue, mas com um custo ou complicação)',
+    );
   }));
 
 test('getStatus and listCampaigns report active campaigns', () =>

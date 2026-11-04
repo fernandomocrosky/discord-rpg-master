@@ -81,13 +81,19 @@ export function rollCheck(
   return { attribute, die, modifier, total, difficulty, margin, grade: gradeCheck(die, margin) };
 }
 
-/** Text the GM receives, e.g. "teste de Agilidade: 1d20 (14) +2 = 16 contra dificuldade 15 → Sucesso por 1 (consegue)". */
+/** e.g. "passou por 3", "no limite", "faltou 1", "faltaram 4". */
+export function describeMargin(margin: number): string {
+  if (margin === 0) return 'no limite';
+  if (margin > 0) return `passou por ${margin}`;
+  return margin === -1 ? 'faltou 1' : `faltaram ${-margin}`;
+}
+
+/** Text the GM receives, e.g. "teste de Agilidade: 1d20 (14) +2 = 16 contra dificuldade 15 → Sucesso, passou por 1 (consegue)". */
 export function describeCheck(result: CheckResult): string {
   const { attribute, die, modifier, total, difficulty, margin, grade } = result;
   const info = GRADE_INFO[grade];
-  const by = margin === 0 ? 'no limite' : `por ${Math.abs(margin)}`;
   return (
     `teste de ${ATTRIBUTE_LABELS[attribute]}: 1d20 (${die}) ${formatModifier(modifier)} = ${total} ` +
-    `contra dificuldade ${difficulty} → ${info.label} ${by} (${info.meaning})`
+    `contra dificuldade ${difficulty} → ${info.label}, ${describeMargin(margin)} (${info.meaning})`
   );
 }

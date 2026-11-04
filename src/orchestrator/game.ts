@@ -7,11 +7,12 @@ import {
   SECRETS_PROMPT,
   SUMMARY_PROMPT,
 } from '../llm/prompts.ts';
-import { buildAttributes, type Attribute, type Attributes } from '../rules/checks.ts';
+import { buildAttributes, describeCheck, rollCheck, type Attribute, type Attributes, type CheckResult } from '../rules/checks.ts';
 import { describeRoll, rollDice, type RollResult, type Rng } from '../rules/dice.ts';
 import {
   addParticipant,
   appendHistory,
+  characterAttributes,
   charactersAtTable,
   createCampaign,
   currentSession,
@@ -29,7 +30,7 @@ import {
 } from '../state/campaign.ts';
 import type { CampaignStore } from '../state/store.ts';
 import { buildContext, formatEntry } from './context.ts';
-import { parseRollRequest, type RollRequest } from './roll-request.ts';
+import { parseCallToAction, type CallToAction } from './call-to-action.ts';
 import { campaignStatus, type CampaignStatus } from './status.ts';
 
 export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
@@ -37,10 +38,10 @@ export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
 /** Error whose message is meant for the player (pt-BR). Anything else is an internal error. */
 export class GameError extends Error {}
 
-/** What the GM said, plus the roll it asked for (if any). */
+/** What the GM said (without its closing line) and whose turn it is or which check it asked for. */
 export interface Narration {
   text: string;
-  rollRequest: RollRequest | null;
+  callToAction: CallToAction | null;
 }
 
 export type StartSessionResult =
@@ -59,7 +60,9 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
     const { text, usage } = await generate(buildContext(campaign, instruction));
     let updated = appendHistory(campaign, { role: 'gm', text });
     updated = recordUsage(updated, usage);
-    return { campaign: updated, narration: { text, rollRequest: parseRollRequest(text, charactersAtTable(updated)) } };
+    // History keeps the raw text (with the closing line) so the GM keeps seeing its own format.
+    const { narration, callToAction } = parseCallToAction(text, charactersAtTable(updated));
+    return { campaign: updated, narration: { text: narration, callToAction } };
   }
 
   /**
@@ -167,6 +170,22 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
      * Starts a session with the players at the table. If any of them has no character yet,
      * nothing changes and their userIds are returned so they can create one first.
      */
+    /** Check asked for by the GM: the code rolls 1d20 + attribute, compares and grades; the GM narrates the verdict. */
+    playerCheck(
+      channelId: string,
+      userId: string,
+      attribute: Attribute,
+      difficulty: number,
+    ): Promise<{ check: CheckResult; narration: Narration }> {
+      return withPlayer(channelId, userId, async (campaign) => {
+        const modifier = characterAttributes(campaign.characters[userId]!)[attribute];
+        const check = rollCheck(attribute, modifier, difficulty, rng);
+        const withCheck = appendHistory(campaign, { role: 'check', userId, text: describeCheck(check) });
+        const { campaign: updated, narration } = await narrate(withCheck);
+        return { campaign: updated, result: { check, narration } };
+      });
+    },
+
     async startSession(channelId: string, playerIds: string[]): Promise<StartSessionResult> {
       let result!: StartSessionResult;
       await store.update(channelId, async (current) => {

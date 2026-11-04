@@ -77,6 +77,8 @@ export function formatEntry(campaign: Campaign, entry: HistoryEntry): string {
       return `${name}: ${entry.text}`;
     case 'roll':
       return `${name} rolou ${entry.text}`;
+    case 'check':
+      return `${name} fez ${entry.text}`;
     case 'gm':
       return entry.text;
   }

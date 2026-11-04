@@ -13,7 +13,7 @@ export function characterAttributes(character: Character): Attributes {
   return character.attributes ?? NEUTRAL_ATTRIBUTES;
 }
 
-export type HistoryRole = 'player' | 'roll' | 'gm';
+export type HistoryRole = 'player' | 'roll' | 'check' | 'gm';
 
 export interface HistoryEntry {
   role: HistoryRole;
