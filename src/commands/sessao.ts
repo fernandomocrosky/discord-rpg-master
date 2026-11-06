@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, type ChatInputCommandInteraction } from 'discord.js';
 import { GameError, type Game } from '../orchestrator/game.ts';
-import { narrationReply } from './buttons.ts';
+import { roundReply } from './buttons.ts';
 import { runCommand, type ReplyContent } from './reply.ts';
 import type { Command } from './types.ts';
 
@@ -44,7 +44,7 @@ async function start(interaction: ChatInputCommandInteraction, game: Game): Prom
     );
   }
   const table = result.characters.map((c) => `**${c.name}** (<@${c.userId}>)`).join(', ');
-  return narrationReply(`🎭 Na mesa: ${table}`, result.narration);
+  return roundReply(interaction, game, `🎭 Na mesa: ${table}`, { status: 'narrated', narration: result.narration });
 }
 
 async function end(interaction: ChatInputCommandInteraction, game: Game): Promise<string> {

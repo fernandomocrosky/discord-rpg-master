@@ -11,7 +11,7 @@ import { seededRng, simulate } from './simulate.ts';
 
 const scenario = SCENARIOS[0]!;
 
-/** Fake LLM: the GM alternates turns and checks; players and setup get plain text. */
+/** Fake LLM: the GM alternates asking everyone and asking for checks; players and setup get plain text. */
 function fakeLlm() {
   const systems: string[] = [];
   let gmCalls = 0;
@@ -20,9 +20,12 @@ function fakeLlm() {
     const usage = { inputTokens: 100, outputTokens: 10 };
     if (!system.startsWith(GM_SYSTEM_PROMPT.slice(0, 40))) return { text: 'tento algo', usage };
     gmCalls++;
-    const name = scenario.players[gmCalls % scenario.players.length]!.name;
+    const [first, second] = scenario.players;
     return {
-      text: gmCalls % 2 ? `Cena.\n\n👉 ${name}, o que você faz?` : `Cena.\n\n🎲 ${name}, teste de Mente para pensar (dificuldade 10)`,
+      text:
+        gmCalls % 2
+          ? 'Cena.\n\n👉 Todos, o que vocês fazem?'
+          : `Cena.\n\n🎲 ${first!.name}, teste de Mente para pensar (dificuldade 10)\n🎲 ${second!.name}, teste de Força para puxar (dificuldade 15)`,
       usage,
     };
   };
@@ -53,6 +56,7 @@ test('plays until the response limit and ends the session', async () => {
   assert.equal(result.events.filter((e) => e.kind === 'gm').length, 8);
   assert.ok(result.events.some((e) => e.kind === 'action'));
   assert.ok(result.events.some((e) => e.kind === 'check'));
+  assert.ok(result.events.some((e) => e.kind === 'silence' || e.kind === 'missed-check')); // the quiet player
   assert.notEqual(result.summary, null);
 });
 

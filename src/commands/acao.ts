@@ -1,5 +1,5 @@
 import { SlashCommandBuilder } from 'discord.js';
-import { narrationReply } from './buttons.ts';
+import { roundReply } from './buttons.ts';
 import { runCommand } from './reply.ts';
 import type { Command } from './types.ts';
 
@@ -11,10 +11,10 @@ export const acao: Command = {
   execute(interaction, game) {
     return runCommand(interaction, async () => {
       const text = interaction.options.getString('texto', true);
-      const narration = await game.playerAction(interaction.channelId, interaction.user.id, text);
+      const progress = await game.playerAction(interaction.channelId, interaction.user.id, text);
       const character = await game.getCharacter(interaction.channelId, interaction.user.id);
       // Echo the action so the channel reads like a table log.
-      return narrationReply(`> **${character?.name ?? interaction.user.displayName}:** ${text}`, narration);
+      return roundReply(interaction, game, `> **${character?.name ?? interaction.user.displayName}:** ${text}`, progress);
     });
   },
 };

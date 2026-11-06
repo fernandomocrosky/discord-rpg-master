@@ -209,23 +209,6 @@ export function flushRound(campaign: Campaign, now = new Date()): Campaign {
   return round.reduce((updated, entry) => appendHistory(updated, entry, now), closed);
 }
 
-export interface TurnStanding {
-  character: Character;
-  waiting: number | null; // GM responses since the character last acted; null if they have not acted this session
-}
-
-/** Characters at the table, starting with whoever has gone longest without acting. */
-export function turnOrder(campaign: Campaign): TurnStanding[] {
-  const entries = sessionHistory(campaign);
-  const standings = charactersAtTable(campaign).map((character) => {
-    const lastAction = entries.findLastIndex((entry) => entry.role !== 'gm' && entry.userId === character.userId);
-    const waiting = lastAction < 0 ? null : entries.slice(lastAction + 1).filter((entry) => entry.role === 'gm').length;
-    return { character, waiting };
-  });
-  const rank = ({ waiting }: TurnStanding) => waiting ?? Number.MAX_SAFE_INTEGER;
-  return standings.toSorted((a, b) => rank(b) - rank(a));
-}
-
 export function startSession(campaign: Campaign, participants: string[], now = new Date()): Campaign {
   if (currentSession(campaign)) {
     throw new Error('Já existe uma sessão em andamento.');

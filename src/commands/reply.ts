@@ -32,18 +32,18 @@ export function splitMessage(text: string, limit = DISCORD_MESSAGE_LIMIT): strin
 /**
  * Acknowledges the interaction, runs `produce` and sends its reply (split if needed).
  * - Slash command: deferReply ("thinking..."), then the first part replaces it.
- * - Button: the clicked button is removed from its message, then the reply is sent as new messages.
+ * - Button: the clicked button is removed from its message (`remainingButtons` stay), then the reply is sent as new messages.
  * GameError messages are shown to the player; anything else is logged and replaced by a generic message.
  */
 export async function runCommand(
   interaction: ChatInputCommandInteraction | ButtonInteraction,
   produce: () => Promise<ReplyContent>,
-  { ephemeral = false } = {},
+  { ephemeral = false, remainingButtons = [] as ActionRowBuilder<ButtonBuilder>[] } = {},
 ): Promise<void> {
   const flags = ephemeral ? MessageFlags.Ephemeral : undefined;
   if (interaction.isButton()) {
     // update: edits the message the button belongs to; this also acknowledges the click within 3s.
-    await interaction.update({ components: [] });
+    await interaction.update({ components: remainingButtons });
   } else {
     // deferReply: tells Discord "working on it" (shows "thinking..."), extending the 3s deadline to 15 min.
     await interaction.deferReply(flags ? { flags } : {});

@@ -1,15 +1,15 @@
 // Plays a session with simulated players against the real game. It only uses the public game
 // actions, so it also covers what Discord would call. Players never see the GM's secrets.
 import type { GenerateInput, GenerateResult } from '../llm/client.ts';
-import { createGame, type Generate, type Narration } from '../orchestrator/game.ts';
-import type { Attribute } from '../rules/checks.ts';
+import type { CallToAction } from '../orchestrator/call-to-action.ts';
+import { createGame, type Generate, type Narration, type RoundProgress } from '../orchestrator/game.ts';
 import type { Rng } from '../rules/dice.ts';
 import type { CampaignStore } from '../state/store.ts';
 import type { SimEvent } from './metrics.ts';
 import type { Scenario, SimPlayer } from './scenarios.ts';
 
 const CHANNEL = '1';
-const PLAYER_LOG_WINDOW = 8; // recent public events a simulated player remembers
+const PLAYER_LOG_WINDOW = 10; // recent public events a simulated player remembers
 
 export interface SimUsage {
   inputTokens: number;
@@ -35,6 +35,8 @@ export interface SimOptions {
 }
 
 class BudgetExceeded extends Error {}
+
+type CheckCall = Extract<CallToAction, { kind: 'check' }>;
 
 /** Mulberry32: seeded RNG, so dice and player behavior repeat for the same seed. */
 export function seededRng(seed: number): Rng {
@@ -74,30 +76,54 @@ export async function simulate({ scenario, store, generate, rng, maxResponses, b
     },
   });
 
-  const pending = new Map<string, { attribute: Attribute; difficulty: number }>();
-  const lastActed = new Map<string, number>();
   let responses = 0;
+  let last!: Narration;
 
   const recordGm = (narration: Narration) => {
     events.push({ kind: 'gm', rawText: lastGmText, narration });
+    last = narration;
     responses++;
-    const action = narration.callToAction;
-    if (action?.kind === 'check') pending.set(action.userId, { attribute: action.attribute, difficulty: action.difficulty });
-    if (action?.kind === 'turn') pending.delete(action.userId);
-    return action ?? null;
+  };
+  /** True when the GM answered, ending what the table was waiting for. */
+  const answered = (progress: RoundProgress) => {
+    if (progress.status === 'narrated') recordGm(progress.narration);
+    return progress.status === 'narrated';
   };
 
-  const act = async (player: SimPlayer, called: boolean) => {
-    const text = await playerLine(player, events, generatePlayer);
-    events.push({ kind: 'action', userId: player.userId, name: player.name, text, called });
-    lastActed.set(player.userId, events.length);
-    return recordGm(await game.playerAction(CHANNEL, player.userId, text));
+  /** Everyone declares; quiet players may stay silent, and then someone resolves the round, as the button does. */
+  const playRound = async () => {
+    const present = scenario.players.filter((player) => {
+      const silent = rng() < player.silence;
+      if (silent) events.push({ kind: 'silence', userId: player.userId, name: player.name });
+      return !silent;
+    });
+    const acting = present.length ? present : scenario.players.slice(0, 1);
+    for (const player of acting) {
+      const text = await playerLine(player, events, generatePlayer);
+      events.push({ kind: 'action', userId: player.userId, name: player.name, text });
+      if (answered(await game.playerAction(CHANNEL, player.userId, text))) return;
+    }
+    events.push({ kind: 'round-closed' });
+    recordGm(await game.resolveRound(CHANNEL, acting[0]!.userId));
   };
 
-  const longestWaiting = (except?: string) =>
-    scenario.players
-      .filter((p) => p.userId !== except)
-      .toSorted((a, b) => (lastActed.get(a.userId) ?? -1) - (lastActed.get(b.userId) ?? -1))[0]!;
+  /** Everyone asked rolls; a player who does not is dropped when the round is resolved. */
+  const playChecks = async (checks: CheckCall[]) => {
+    let roller: SimPlayer | undefined;
+    for (const call of checks) {
+      const player = scenario.players.find((p) => p.userId === call.userId)!;
+      if (rng() < player.silence) {
+        events.push({ kind: 'missed-check', userId: player.userId, name: player.name });
+        continue;
+      }
+      roller = player;
+      const { check, progress } = await game.playerCheck(CHANNEL, player.userId, call.attribute, call.difficulty);
+      events.push({ kind: 'check', userId: player.userId, name: player.name, check });
+      if (answered(progress)) return;
+    }
+    events.push({ kind: 'round-closed' });
+    recordGm(await game.resolveRound(CHANNEL, (roller ?? scenario.players[0]!).userId));
+  };
 
   let stopReason: SimResult['stopReason'] = 'responses';
   let summary: string | null = null;
@@ -108,29 +134,12 @@ export async function simulate({ scenario, store, generate, rng, maxResponses, b
     }
     const started = await game.startSession(CHANNEL, scenario.players.map((p) => p.userId));
     if (started.status !== 'started') throw new Error('Simulated session did not start.');
-    let call = recordGm(started.narration);
+    recordGm(started.narration);
 
     while (responses < maxResponses) {
-      const interrupter = scenario.players.find((p) => p.userId !== call?.userId && rng() < p.interrupt);
-      const [rollerId, roll] = [...pending.entries()][0] ?? [];
-      if (interrupter) {
-        call = await act(interrupter, false);
-      } else if (rollerId && roll) {
-        const player = scenario.players.find((p) => p.userId === rollerId)!;
-        const { check, narration } = await game.playerCheck(CHANNEL, rollerId, roll.attribute, roll.difficulty);
-        pending.delete(rollerId);
-        events.push({ kind: 'check', userId: rollerId, name: player.name, check });
-        lastActed.set(rollerId, events.length);
-        call = recordGm(narration);
-      } else {
-        const called = scenario.players.find((p) => p.userId === call?.userId);
-        if (called && rng() < called.silence) {
-          events.push({ kind: 'silence', userId: called.userId, name: called.name });
-          call = await act(longestWaiting(called.userId), false);
-        } else {
-          call = await act(called ?? longestWaiting(), Boolean(called));
-        }
-      }
+      const checks = last.calls.filter((call): call is CheckCall => call.kind === 'check');
+      if (checks.length) await playChecks(checks);
+      else await playRound();
     }
     summary = (await game.endSession(CHANNEL)).summary;
   } catch (error) {
@@ -155,15 +164,17 @@ async function playerLine(player: SimPlayer, events: SimEvent[], generate: Gener
 /** What every player at the table can see. */
 function publicText(event: SimEvent): string {
   switch (event.kind) {
-    case 'gm': {
-      const action = event.narration.callToAction;
-      return action ? `Mestre: ${event.narration.text}\n(Chamou ${action.characterName})` : `Mestre: ${event.narration.text}`;
-    }
+    case 'gm':
+      return `Mestre: ${event.narration.text}`;
     case 'action':
       return `${event.name}: ${event.text}`;
     case 'silence':
-      return `${event.name} ficou em silêncio.`;
+      return `${event.name} não declarou nada.`;
     case 'check':
       return `${event.name} rolou ${event.check.total} contra dificuldade ${event.check.difficulty}.`;
+    case 'missed-check':
+      return `${event.name} não rolou o teste.`;
+    case 'round-closed':
+      return 'A rodada foi fechada.';
   }
 }

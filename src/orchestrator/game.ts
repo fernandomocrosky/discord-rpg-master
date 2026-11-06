@@ -7,7 +7,7 @@ import {
   SECRETS_PROMPT,
   SUMMARY_PROMPT,
 } from '../llm/prompts.ts';
-import { buildAttributes, describeCheck, rollCheck, type Attribute, type Attributes, type CheckResult } from '../rules/checks.ts';
+import { ATTRIBUTE_LABELS, buildAttributes, describeCheck, rollCheck, type Attribute, type Attributes, type CheckResult } from '../rules/checks.ts';
 import { describeRoll, rollDice, type RollResult, type Rng } from '../rules/dice.ts';
 import {
   addParticipant,
@@ -17,23 +17,30 @@ import {
   clearPendingCheck,
   createCampaign,
   currentSession,
+  declare,
   endSession,
+  flushRound,
   lastSummary,
   pendingChecks,
   recordSetupUsage,
   recordUsage,
+  roundDeadline,
+  roundEntries,
   sessionHistory,
   setCharacter,
   setPendingCheck,
+  setRoundDeadline,
   setSecrets,
   startSession,
+  undeclared,
   type Campaign,
   type Character,
+  type RoundEntry,
   type TokenUsage,
 } from '../state/campaign.ts';
 import type { CampaignStore } from '../state/store.ts';
 import { buildContext, formatEntry } from './context.ts';
-import { parseCallToAction, type CallToAction } from './call-to-action.ts';
+import { parseCallsToAction, type CallToAction } from './call-to-action.ts';
 import { campaignStatus, type CampaignStatus } from './status.ts';
 
 export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
@@ -41,11 +48,27 @@ export type Generate = (input: GenerateInput) => Promise<GenerateResult>;
 /** Error whose message is meant for the player (pt-BR). Anything else is an internal error. */
 export class GameError extends Error {}
 
-/** What the GM said (without its closing line) and whose turn it is or which check it asked for. */
+/** How long a round (or a set of checks) waits for players who have not answered. */
+export const ROUND_TIME_MS = 3 * 60 * 1000;
+
+/** What the GM said (without its closing lines) and who it called. `deadline` is set when it asked for checks. */
 export interface Narration {
   text: string;
-  callToAction: CallToAction | null;
+  calls: CallToAction[];
+  deadline?: Date;
 }
+
+/** Result of anything a player does: the GM answered, or the round is still waiting for someone. */
+export type RoundProgress =
+  | { status: 'narrated'; narration: Narration }
+  | {
+      status: 'waiting';
+      rolling: boolean; // waiting for check rolls, not for declarations
+      declared: number;
+      total: number;
+      missing: { userId: string; name: string }[];
+      deadline: Date;
+    };
 
 export type StartSessionResult =
   | { status: 'started'; characters: Character[]; narration: Narration }
@@ -55,17 +78,77 @@ export interface GameDeps {
   store: CampaignStore;
   generate: Generate;
   rng?: Rng;
+  now?: () => Date;
+  roundTimeMs?: number;
 }
 
-export function createGame({ store, generate, rng = Math.random }: GameDeps) {
+export function createGame({ store, generate, rng = Math.random, now = () => new Date(), roundTimeMs = ROUND_TIME_MS }: GameDeps) {
   /** Calls the LLM with the current context, records its narration and token usage. */
   async function narrate(campaign: Campaign, instruction?: string): Promise<{ campaign: Campaign; narration: Narration }> {
     const { text, usage } = await generate(buildContext(campaign, instruction));
     let updated = appendHistory(campaign, { role: 'gm', text });
     updated = recordUsage(updated, usage);
-    // History keeps the raw text (with the closing line) so the GM keeps seeing its own format.
-    const { narration, callToAction } = parseCallToAction(text, charactersAtTable(updated));
-    return { campaign: trackPendingCheck(updated, callToAction), narration: { text: narration, callToAction } };
+    // History keeps the raw text (with the closing lines) so the GM keeps seeing its own format.
+    const { narration, calls } = parseCallsToAction(text, charactersAtTable(updated));
+    const checks = calls.flatMap((call) => (call.kind === 'check' ? [call] : []));
+    const deadline = checks.length ? newDeadline() : undefined;
+    updated = checks.reduce(
+      (current, { userId, attribute, difficulty, goal }) =>
+        setPendingCheck(current, userId, { attribute, difficulty, ...(goal ? { goal } : {}) }),
+      setRoundDeadline(updated, deadline?.toISOString()),
+    );
+    return { campaign: updated, narration: { text: narration, calls, ...(deadline ? { deadline } : {}) } };
+  }
+
+  function newDeadline(): Date {
+    return new Date(now().getTime() + roundTimeMs);
+  }
+
+  /**
+   * After anything a player does: the GM answers once nobody is left to wait for. Pending checks are
+   * waited for first; their results are then narrated together. `force` stops waiting right away.
+   */
+  async function advance(campaign: Campaign, force = false): Promise<{ campaign: Campaign; result: RoundProgress }> {
+    const deadline = roundDeadline(campaign);
+    const stopWaiting = force || (deadline !== undefined && now() >= new Date(deadline));
+    const current = stopWaiting ? dropPendingChecks(campaign) : campaign;
+
+    const rolling = Object.keys(pendingChecks(current));
+    const missing = rolling.length ? rolling : undeclared(current);
+    if (rolling.length || (missing.length && !stopWaiting && !hasResultsToNarrate(current))) {
+      const session = currentSession(current)!;
+      return {
+        campaign: current,
+        result: {
+          status: 'waiting',
+          rolling: rolling.length > 0,
+          declared: session.participants.length - undeclared(current).length,
+          total: session.participants.length,
+          missing: missing.map((userId) => ({ userId, name: current.characters[userId]?.name ?? 'Jogador' })),
+          deadline: new Date(roundDeadline(current) ?? newDeadline()),
+        },
+      };
+    }
+    const { campaign: updated, narration } = await narrate(flushRound(current, now()));
+    return { campaign: updated, result: { status: 'narrated', narration } };
+  }
+
+  /** Whoever did not roll in time does not act: the code never rolls for a player. */
+  function dropPendingChecks(campaign: Campaign): Campaign {
+    return Object.entries(pendingChecks(campaign)).reduce(
+      (current, [userId, check]) =>
+        appendHistory(
+          clearPendingCheck(current, userId),
+          { role: 'player', userId, text: `(hesitou e não fez o teste de ${ATTRIBUTE_LABELS[check.attribute]})` },
+          now(),
+        ),
+      campaign,
+    );
+  }
+
+  /** Records a declaration in the open round and answers if the round is complete. */
+  function declareAndAdvance(campaign: Campaign, entry: RoundEntry) {
+    return advance(declare(campaign, entry, newDeadline().toISOString()));
   }
 
   /**
@@ -147,15 +230,16 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       return campaign?.characters[userId] ?? null;
     },
 
-    playerAction(channelId: string, userId: string, text: string): Promise<Narration> {
-      return withPlayer(channelId, userId, async (campaign) => {
-        const withAction = appendHistory(campaign, { role: 'player', userId, text });
-        const { campaign: updated, narration } = await narrate(withAction);
-        return { campaign: updated, result: narration };
+    playerAction(channelId: string, userId: string, text: string): Promise<RoundProgress> {
+      return withPlayer(channelId, userId, (campaign) => {
+        if (pendingChecks(campaign)[userId]) {
+          throw new GameError('Role o seu teste antes de declarar outra ação.');
+        }
+        return declareAndAdvance(campaign, { userId, role: 'player', text });
       });
     },
 
-    playerRoll(channelId: string, userId: string, expression: string): Promise<{ roll: RollResult; narration: Narration }> {
+    playerRoll(channelId: string, userId: string, expression: string): Promise<{ roll: RollResult; progress: RoundProgress }> {
       return withPlayer(channelId, userId, async (campaign) => {
         let roll: RollResult;
         try {
@@ -163,9 +247,8 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
         } catch (error) {
           throw new GameError((error as Error).message);
         }
-        const withRoll = appendHistory(campaign, { role: 'roll', userId, text: describeRoll(roll) });
-        const { campaign: updated, narration } = await narrate(withRoll);
-        return { campaign: updated, result: { roll, narration } };
+        const { campaign: updated, result } = await declareAndAdvance(campaign, { userId, role: 'roll', text: describeRoll(roll) });
+        return { campaign: updated, result: { roll, progress: result } };
       });
     },
 
@@ -179,7 +262,7 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       userId: string,
       attribute: Attribute,
       difficulty: number,
-    ): Promise<{ check: CheckResult; narration: Narration }> {
+    ): Promise<{ check: CheckResult; progress: RoundProgress }> {
       return withPlayer(channelId, userId, async (campaign) => {
         // Buttons outlive their check (repeated requests, old messages): only the pending one rolls.
         const pending = pendingChecks(campaign)[userId];
@@ -188,10 +271,49 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
         }
         const modifier = characterAttributes(campaign.characters[userId]!)[attribute];
         const check = rollCheck(attribute, modifier, difficulty, rng);
-        const withCheck = appendHistory(clearPendingCheck(campaign, userId), { role: 'check', userId, text: describeCheck(check) });
-        const { campaign: updated, narration } = await narrate(withCheck);
-        return { campaign: updated, result: { check, narration } };
+        const withCheck = appendHistory(clearPendingCheck(campaign, userId), { role: 'check', userId, text: describeCheck(check) }, now());
+        const { campaign: updated, result } = await advance(withCheck);
+        return { campaign: updated, result: { check, progress: result } };
       });
+    },
+
+    /** "Resolver agora": any player at the table can stop waiting for the others. */
+    async resolveRound(channelId: string, userId: string): Promise<Narration> {
+      let narration!: Narration;
+      await store.update(channelId, async (current) => {
+        const campaign = requireCampaign(current);
+        const session = requireSession(campaign);
+        if (!session.participants.includes(userId)) {
+          throw new GameError('Só quem está na mesa pode resolver a rodada.');
+        }
+        if (!hasOpenRound(campaign)) {
+          throw new GameError('Não há rodada aberta para resolver.');
+        }
+        const { campaign: updated, result } = await advance(campaign, true);
+        if (result.status !== 'narrated') throw new Error('A forced round must be narrated.');
+        narration = result.narration;
+        return updated;
+      });
+      return narration;
+    },
+
+    /** Called by a timer: closes the round if its deadline has passed. Null when there is nothing to do. */
+    async expireRound(channelId: string): Promise<Narration | null> {
+      const isDue = (campaign: Campaign | null): campaign is Campaign => {
+        const deadline = campaign && currentSession(campaign) ? roundDeadline(campaign) : undefined;
+        return deadline !== undefined && now() >= new Date(deadline) && hasOpenRound(campaign!);
+      };
+      if (!isDue(await store.load(channelId))) return null;
+
+      let narration: Narration | null = null;
+      await store.update(channelId, async (current) => {
+        const campaign = requireCampaign(current);
+        if (!isDue(campaign)) return campaign; // someone closed it while this call waited in the queue
+        const { campaign: updated, result } = await advance(campaign);
+        if (result.status === 'narrated') narration = result.narration;
+        return updated;
+      });
+      return narration;
     },
 
     async startSession(channelId: string, playerIds: string[]): Promise<StartSessionResult> {
@@ -228,8 +350,9 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
         const campaign = requireCampaign(current);
         requireSession(campaign);
 
-        const previous = lastSummary(campaign);
-        const transcript = sessionHistory(campaign).map((entry) => formatEntry(campaign, entry)).join('\n\n');
+        const flushed = flushRound(campaign, now()); // what was declared and never answered still happened at the table
+        const previous = lastSummary(flushed);
+        const transcript = sessionHistory(flushed).map((entry) => formatEntry(flushed, entry)).join('\n\n');
         const { text: summary, usage } = await generate({
           system: SUMMARY_PROMPT,
           messages: [
@@ -240,7 +363,7 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
           ],
         });
 
-        const ended = endSession(recordUsage(campaign, usage), summary);
+        const ended = endSession(recordUsage(flushed, usage), summary);
         result = { summary, usage: ended.sessions.at(-1)!.usage };
         return ended;
       });
@@ -251,12 +374,15 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
 
 export type Game = ReturnType<typeof createGame>;
 
-/** A new call to action replaces the character's pending check: a new check takes its place, a turn cancels it. */
-function trackPendingCheck(campaign: Campaign, callToAction: CallToAction | null): Campaign {
-  if (!callToAction) return campaign;
-  if (callToAction.kind === 'turn') return clearPendingCheck(campaign, callToAction.userId);
-  const { userId, attribute, difficulty, goal } = callToAction;
-  return setPendingCheck(campaign, userId, { attribute, difficulty, ...(goal ? { goal } : {}) });
+/** There is something for the GM to answer, or someone it is waiting for. */
+function hasOpenRound(campaign: Campaign): boolean {
+  return roundEntries(campaign).length > 0 || Object.keys(pendingChecks(campaign)).length > 0 || hasResultsToNarrate(campaign);
+}
+
+/** The last thing in the history is not the GM's: check results (or missed checks) await narration. */
+function hasResultsToNarrate(campaign: Campaign): boolean {
+  const last = campaign.history.at(-1);
+  return last !== undefined && last.role !== 'gm';
 }
 
 function requireCampaign(campaign: Campaign | null): Campaign {

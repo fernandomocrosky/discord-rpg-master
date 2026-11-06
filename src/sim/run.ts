@@ -60,9 +60,13 @@ function render(event: SimEvent): string {
     case 'gm':
       return `**Mestre:** ${event.rawText}`;
     case 'action':
-      return `**${event.name}${event.called ? '' : ' (fora da vez)'}:** ${event.text}`;
+      return `**${event.name}:** ${event.text}`;
     case 'silence':
-      return `*${event.name} não respondeu.*`;
+      return `*${event.name} não declarou nada.*`;
+    case 'missed-check':
+      return `*${event.name} não rolou o teste.*`;
+    case 'round-closed':
+      return '*Rodada fechada sem esperar todos.*';
     case 'check':
       return `*${event.name}: 1d20 (${event.check.die}) ${event.check.modifier >= 0 ? '+' : ''}${event.check.modifier} = ${event.check.total} vs ${event.check.difficulty}, ${event.check.grade}*`;
   }

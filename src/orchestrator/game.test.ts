@@ -5,9 +5,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { GenerateInput } from '../llm/client.ts';
 import { OPEN_SCENE_INSTRUCTION, RESUME_SESSION_INSTRUCTION } from '../llm/prompts.ts';
-import { currentSession, pendingChecks, setPendingCheck } from '../state/campaign.ts';
+import { currentSession, pendingChecks, roundEntries, setPendingCheck } from '../state/campaign.ts';
 import { JsonCampaignStore } from '../state/store.ts';
-import { GameError, createGame, type Generate } from './game.ts';
+import { GameError, createGame, type Generate, type RoundProgress } from './game.ts';
 
 const CHANNEL = '100';
 const SETUP = { setting: 'Vila costeira', tone: 'mistério', hook: 'Navio vazio' };
@@ -93,9 +93,9 @@ test('player actions require a campaign, a session and a character', () =>
 test('playerAction records the action and the narration', () =>
   withGame(async (ctx) => {
     await playing(ctx);
-    const narration = await ctx.game.playerAction(CHANNEL, 'u1', 'subo a bordo');
+    const progress = await ctx.game.playerAction(CHANNEL, 'u1', 'subo a bordo');
 
-    assert.deepEqual(narration, { text: 'resposta 3', callToAction: null });
+    assert.deepEqual(progress, { status: 'narrated', narration: { text: 'resposta 3', calls: [] } });
     assert.equal(ctx.llm.calls[2]!.messages.at(-1)?.content, 'Lia: subo a bordo');
     const history = (await ctx.store.load(CHANNEL))!.history;
     assert.deepEqual(history.slice(-2).map((h) => h.text), ['subo a bordo', 'resposta 3']);
@@ -108,6 +108,7 @@ test('a late player joins the table on their first action', () =>
     await ctx.game.playerAction(CHANNEL, 'u2', 'entro correndo');
 
     assert.deepEqual(currentSession((await ctx.store.load(CHANNEL))!)?.participants, ['u1', 'u2']);
+    await ctx.game.playerAction(CHANNEL, 'u1', 'olho para ele');
     assert.match(ctx.llm.calls.at(-1)!.system, /Personagens na mesa: Lia[^\n]*Tomás/);
   }));
 
@@ -175,17 +176,21 @@ test('the closing call to action is split from the narration', () =>
       usage: { inputTokens: 1, outputTokens: 1 },
     });
     const game = createGame({ store: ctx.store, generate: llm });
-    const narration = await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
+    const progress = await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
+    assert.equal(progress.status, 'narrated');
+    const { narration } = progress as Extract<RoundProgress, { status: 'narrated' }>;
     assert.equal(narration.text, 'A corda range.');
-    assert.deepEqual(narration.callToAction, {
-      kind: 'check',
-      userId: 'u1',
-      characterName: 'Lia',
-      attribute: 'agilidade',
-      modifier: 2,
-      difficulty: 15,
-      goal: 'subir',
-    });
+    assert.deepEqual(narration.calls, [
+      {
+        kind: 'check',
+        userId: 'u1',
+        characterName: 'Lia',
+        attribute: 'agilidade',
+        modifier: 2,
+        difficulty: 15,
+        goal: 'subir',
+      },
+    ]);
     // History keeps the raw text so the GM keeps seeing its own format.
     assert.match((await ctx.store.load(CHANNEL))!.history.at(-1)!.text, /🎲 Lia, teste de Agilidade/);
   }));
@@ -217,12 +222,11 @@ const scripted = (...lines: string[]): Generate => {
 };
 const ASK_CHECK = '🎲 Lia, teste de Agilidade para subir (dificuldade 15)';
 
-test('a requested check rolls only once, even if the GM asked for it twice', () =>
+test('a requested check rolls only once', () =>
   withGame(async (ctx) => {
     await playing(ctx);
-    const game = createGame({ store: ctx.store, generate: scripted(ASK_CHECK, ASK_CHECK), rng: () => 0.5 });
+    const game = createGame({ store: ctx.store, generate: scripted(ASK_CHECK), rng: () => 0.5 });
     await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
-    await game.playerAction(CHANNEL, 'u1', 'subo mesmo');
     assert.deepEqual(pendingChecks((await ctx.store.load(CHANNEL))!), {
       u1: { attribute: 'agilidade', difficulty: 15, goal: 'subir' },
     });
@@ -246,22 +250,163 @@ test('a check that is not the pending one cannot be rolled', () =>
     await assert.rejects(game.playerCheck(CHANNEL, 'u1', 'mente', 15), GameError);
   }));
 
-test('a pending check survives other players acting, and a new turn for its owner cancels it', () =>
+const ASK_BOTH = '🎲 Lia, teste de Agilidade para subir (dificuldade 10)\n🎲 Tomás, teste de Mente para lembrar (dificuldade 15)';
+
+/** Lia (u1) and Tomás (u2) at the table, with a clock the test controls. */
+async function twoPlayers(ctx: Ctx, generate?: Generate) {
+  await ctx.game.newCampaign(CHANNEL, SETUP);
+  await ctx.game.createCharacter(CHANNEL, 'u1', { name: 'Lia', concept: 'pescadora', profile: PROFILE });
+  await ctx.game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre', profile: PROFILE });
+  await ctx.game.startSession(CHANNEL, ['u1', 'u2']);
+  const clock = { time: new Date('2030-01-01T00:00:00Z') };
+  const game = createGame({ store: ctx.store, generate: generate ?? ctx.llm.generate, rng: () => 0.5, now: () => clock.time, roundTimeMs: 60_000 });
+  const tick = (ms: number) => {
+    clock.time = new Date(clock.time.getTime() + ms);
+  };
+  return { game, tick };
+}
+
+const callsSoFar = (ctx: Ctx) => ctx.llm.calls.length;
+
+test('the GM answers once, after everyone at the table has declared', () =>
+  withGame(async (ctx) => {
+    const { game } = await twoPlayers(ctx);
+    const before = callsSoFar(ctx);
+
+    const first = await game.playerAction(CHANNEL, 'u1', 'abro a porta');
+    assert.equal(first.status, 'waiting');
+    assert.deepEqual(first.status === 'waiting' && [first.declared, first.total, first.missing], [1, 2, [{ userId: 'u2', name: 'Tomás' }]]);
+    assert.equal(callsSoFar(ctx), before);
+
+    const second = await game.playerAction(CHANNEL, 'u2', 'rezo');
+    assert.equal(second.status, 'narrated');
+    assert.equal(callsSoFar(ctx), before + 1);
+    assert.deepEqual(ctx.llm.calls.at(-1)!.messages.slice(-2).map((m) => m.content), ['Lia: abro a porta', 'Tomás: rezo']);
+    assert.deepEqual(roundEntries((await ctx.store.load(CHANNEL))!), []);
+  }));
+
+test('declaring again before the round closes replaces the action', () =>
+  withGame(async (ctx) => {
+    const { game } = await twoPlayers(ctx);
+    await game.playerAction(CHANNEL, 'u1', 'abro a porta');
+    await game.playerAction(CHANNEL, 'u1', 'fecho a porta');
+    await game.playerAction(CHANNEL, 'u2', 'rezo');
+    assert.deepEqual(ctx.llm.calls.at(-1)!.messages.slice(-2).map((m) => m.content), ['Lia: fecho a porta', 'Tomás: rezo']);
+  }));
+
+test('resolveRound stops waiting, only for players at the table and only with an open round', () =>
+  withGame(async (ctx) => {
+    const { game } = await twoPlayers(ctx);
+    await assert.rejects(game.resolveRound(CHANNEL, 'u1'), GameError); // nothing declared yet
+    await game.playerAction(CHANNEL, 'u1', 'abro a porta');
+    await assert.rejects(game.resolveRound(CHANNEL, 'stranger'), /Só quem está na mesa/);
+
+    const narration = await game.resolveRound(CHANNEL, 'u2');
+    assert.match(narration.text, /resposta/);
+    assert.equal(ctx.llm.calls.at(-1)!.messages.at(-1)?.content, 'Lia: abro a porta');
+  }));
+
+test('expireRound closes the round only after the deadline', () =>
+  withGame(async (ctx) => {
+    const { game, tick } = await twoPlayers(ctx);
+    await game.playerAction(CHANNEL, 'u1', 'abro a porta');
+    const before = callsSoFar(ctx);
+
+    tick(59_000);
+    assert.equal(await game.expireRound(CHANNEL), null);
+    assert.equal(callsSoFar(ctx), before);
+
+    tick(1_000);
+    assert.notEqual(await game.expireRound(CHANNEL), null);
+    assert.equal(callsSoFar(ctx), before + 1);
+    assert.equal(await game.expireRound(CHANNEL), null); // already closed
+  }));
+
+test('expireRound does nothing without a campaign, a session or a round', () =>
+  withGame(async (ctx) => {
+    assert.equal(await ctx.game.expireRound(CHANNEL), null);
+    await playing(ctx);
+    assert.equal(await ctx.game.expireRound(CHANNEL), null);
+    await ctx.game.endSession(CHANNEL);
+    assert.equal(await ctx.game.expireRound(CHANNEL), null);
+  }));
+
+test('a round past its deadline closes on the next action (e.g. the timer was lost in a restart)', () =>
   withGame(async (ctx) => {
     await playing(ctx);
     await ctx.game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre', profile: PROFILE });
-    const game = createGame({
-      store: ctx.store,
-      generate: scripted(ASK_CHECK, '👉 Tomás, o que você faz?', '👉 Lia, o que você faz?'),
-      rng: () => 0.5,
-    });
-    await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
-    await game.playerAction(CHANNEL, 'u2', 'rezo');
-    assert.deepEqual(Object.keys(pendingChecks((await ctx.store.load(CHANNEL))!)), ['u1']);
+    await ctx.game.createCharacter(CHANNEL, 'u3', { name: 'Rui', concept: 'guarda', profile: PROFILE });
+    await ctx.game.endSession(CHANNEL);
+    await ctx.game.startSession(CHANNEL, ['u1', 'u2', 'u3']);
+    const clock = { time: new Date('2030-01-01T00:00:00Z') };
+    const game = createGame({ store: ctx.store, generate: ctx.llm.generate, now: () => clock.time, roundTimeMs: 60_000 });
 
-    await game.playerAction(CHANNEL, 'u1', 'desisto de subir');
+    assert.equal((await game.playerAction(CHANNEL, 'u1', 'abro')).status, 'waiting');
+    clock.time = new Date(clock.time.getTime() + 60_000);
+    assert.equal((await game.playerAction(CHANNEL, 'u2', 'rezo')).status, 'narrated');
+  }));
+
+test('several checks: results appear as rolled and the GM narrates them together', () =>
+  withGame(async (ctx) => {
+    let gmCalls = 0;
+    const generate: Generate = async () => ({
+      text: `Cena.\n\n${gmCalls++ === 0 ? ASK_BOTH : '👉 Todos, o que vocês fazem?'}`,
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+    const { game } = await twoPlayers(ctx, generate);
+    await game.playerAction(CHANNEL, 'u1', 'subo');
+    const asked = await game.playerAction(CHANNEL, 'u2', 'lembro');
+    assert.ok(asked.status === 'narrated' && asked.narration.deadline);
+    assert.equal(gmCalls, 1);
+
+    const first = await game.playerCheck(CHANNEL, 'u1', 'agilidade', 10);
+    assert.equal(first.check.die, 11);
+    assert.deepEqual(first.progress.status === 'waiting' && [first.progress.rolling, first.progress.missing], [true, [{ userId: 'u2', name: 'Tomás' }]]);
+    assert.equal(gmCalls, 1);
+
+    const second = await game.playerCheck(CHANNEL, 'u2', 'mente', 15);
+    assert.equal(second.progress.status, 'narrated');
+    assert.equal(gmCalls, 2);
+  }));
+
+test('a player with a pending check must roll before declaring; others may declare early', () =>
+  withGame(async (ctx) => {
+    const { game } = await twoPlayers(ctx, scripted(ASK_CHECK));
+    await game.playerAction(CHANNEL, 'u1', 'subo');
+    await game.playerAction(CHANNEL, 'u2', 'rezo'); // the GM asks only Lia for a check
+
+    await assert.rejects(game.playerAction(CHANNEL, 'u1', 'desisto'), /Role o seu teste/);
+    assert.equal((await game.playerAction(CHANNEL, 'u2', 'corro atrás dela')).status, 'waiting');
+    assert.equal((await game.playerCheck(CHANNEL, 'u1', 'agilidade', 15)).progress.status, 'narrated');
+    assert.match(String(JSON.stringify((await ctx.store.load(CHANNEL))!.history.slice(-3))), /corro atrás dela/);
+  }));
+
+test('whoever does not roll in time does not act: nobody rolls for them', () =>
+  withGame(async (ctx) => {
+    const seen: GenerateInput[] = [];
+    let gmCalls = 0;
+    const generate: Generate = async (input) => {
+      seen.push(input);
+      return { text: gmCalls++ === 0 ? `Cena.\n\n${ASK_BOTH}` : 'Fim.', usage: { inputTokens: 1, outputTokens: 1 } };
+    };
+    const { game, tick } = await twoPlayers(ctx, generate);
+    await game.playerAction(CHANNEL, 'u1', 'subo');
+    await game.playerAction(CHANNEL, 'u2', 'lembro');
+    await game.playerCheck(CHANNEL, 'u1', 'agilidade', 10);
+
+    tick(60_000);
+    assert.notEqual(await game.expireRound(CHANNEL), null);
     assert.deepEqual(pendingChecks((await ctx.store.load(CHANNEL))!), {});
-    await assert.rejects(game.playerCheck(CHANNEL, 'u1', 'agilidade', 15), GameError);
+    assert.equal(seen.at(-1)!.messages.at(-1)?.content, 'Tomás: (hesitou e não fez o teste de Mente)');
+    await assert.rejects(game.playerCheck(CHANNEL, 'u2', 'mente', 15), GameError);
+  }));
+
+test('a declaration still unanswered goes into the session summary', () =>
+  withGame(async (ctx) => {
+    const { game } = await twoPlayers(ctx);
+    await game.playerAction(CHANNEL, 'u1', 'abro a porta');
+    await game.endSession(CHANNEL);
+    assert.match(String(ctx.llm.calls.at(-1)!.messages[0]!.content), /Lia: abro a porta/);
   }));
 
 test('getStatus and listCampaigns report active campaigns', () =>

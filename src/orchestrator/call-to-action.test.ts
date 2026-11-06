@@ -1,12 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Character } from '../state/campaign.ts';
-import { DEFAULT_DIFFICULTY, parseCallToAction } from './call-to-action.ts';
+import { DEFAULT_DIFFICULTY, parseCallsToAction, type CallToAction } from './call-to-action.ts';
 
 const table: Character[] = [
   { userId: 'u1', name: 'Lia', concept: 'pescadora', attributes: { forca: 0, agilidade: 2, mente: 1, presenca: -1 } },
   { userId: 'u2', name: 'Tomás', concept: 'padre' }, // created before attributes existed
 ];
+
+/** Tests of a single closing line. */
+function parseCallToAction(text: string, characters: Character[]): { narration: string; callToAction: CallToAction | null } {
+  const { narration, calls } = parseCallsToAction(text, characters);
+  return { narration, callToAction: calls[0] ?? null };
+}
 
 test('turn line: removed from the narration and returned', () => {
   const result = parseCallToAction('O pescador recua.\n\n👉 Lia, ele vai fugir. O que você faz?', table);
@@ -81,4 +87,46 @@ test('check line: a period after the difficulty is not stakes', () => {
   const { callToAction } = parseCallToAction('🎲 Lia, teste de Mente para lembrar (dificuldade 20).', table);
   assert.equal(callToAction?.kind === 'check' && callToAction.difficulty, 20);
   assert.equal(callToAction?.kind === 'check' && callToAction.stakes, undefined);
+});
+
+test('group line calls everyone at the table', () => {
+  const { narration, calls } = parseCallsToAction('A porta abre.\n\n👉 Todos, o guarda entra. O que vocês fazem?', table);
+  assert.equal(narration, 'A porta abre.');
+  assert.deepEqual(calls, [
+    {
+      kind: 'group',
+      players: [
+        { userId: 'u1', characterName: 'Lia' },
+        { userId: 'u2', characterName: 'Tomás' },
+      ],
+      prompt: 'o guarda entra. O que vocês fazem?',
+    },
+  ]);
+});
+
+test('several check lines: one per character, and they win over a turn line', () => {
+  const { narration, calls } = parseCallsToAction(
+    [
+      'A ponte treme.',
+      '🎲 Lia, teste de Agilidade para pular (dificuldade 10)',
+      '🎲 Tomás, teste de Força para segurar a corda (dificuldade 15)',
+      '🎲 Lia, teste de Mente para pensar (dificuldade 20)',
+      '👉 Todos, o que vocês fazem?',
+    ].join('\n'),
+    table,
+  );
+  assert.equal(narration, 'A ponte treme.');
+  assert.deepEqual(
+    calls.map((c) => (c.kind === 'check' ? [c.userId, c.attribute, c.difficulty] : c.kind)),
+    [['u1', 'mente', 20], ['u2', 'forca', 15]],
+  );
+});
+
+test('an unreadable line stays in the text while the others are read', () => {
+  const { narration, calls } = parseCallsToAction(
+    'A ponte treme.\n🎲 Bruno, teste de Força (dificuldade 10)\n🎲 Lia, teste de Mente (dificuldade 10)',
+    table,
+  );
+  assert.equal(narration, 'A ponte treme.\n🎲 Bruno, teste de Força (dificuldade 10)');
+  assert.equal(calls.length, 1);
 });

@@ -1,4 +1,5 @@
-// Reads the GM's closing line, which says whose turn it is or asks for a check:
+// Reads the GM's closing lines, which call the whole table or ask for checks (one line per character):
+//   "👉 Todos, o guarda se aproxima. O que vocês fazem?"
 //   "👉 Lia, o pescador está prestes a fugir. O que você faz?"
 //   "🎲 Lia, teste de Agilidade para escalar o mastro (dificuldade 15)"
 // A check line may go on after the difficulty, usually with what is at stake: "... (dificuldade 15). Se falhar, ela cai."
@@ -7,6 +8,7 @@ import { characterAttributes, type Character } from '../state/campaign.ts';
 import { parseAttribute, type Attribute } from '../rules/checks.ts';
 
 export type CallToAction =
+  | { kind: 'group'; players: { userId: string; characterName: string }[]; prompt: string }
   | { kind: 'turn'; userId: string; characterName: string; prompt: string }
   | {
       kind: 'check';
@@ -26,25 +28,26 @@ const TURN_LINE = /^👉\s*(.+?),\s*(.+)$/;
 const CHECK_LINE = /^🎲\s*(.+?),\s*teste\s+de\s+(\p{L}+)(?:\s+para\s+(.+?))?\s*(?:\(\s*dificuldade\s*(\d+)\s*\)\s*\.?\s*(.*?)\s*|\.?)$/iu;
 
 /**
- * Splits the narration from its closing call to action. The line is removed from the text only
- * when it names a character at the table; otherwise the text is returned untouched and the
- * call to action is null (players can still use /acao and /rolar).
+ * Splits the narration from its closing calls. A line is removed from the text only when it can be
+ * read (a character at the table, a known attribute); otherwise it stays and players can still use /acao.
+ * Checks win over a 👉 line, since the table first has to roll. A character's last check wins.
  */
-export function parseCallToAction(
-  text: string,
-  charactersAtTable: Character[],
-): { narration: string; callToAction: CallToAction | null } {
-  const lines = text.split('\n');
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]!.replace(/[*_]/g, '').trim(); // the GM may bold or italicize the line
-    if (!line.startsWith('👉') && !line.startsWith('🎲')) continue;
-
-    const callToAction = parseLine(line, charactersAtTable);
-    if (!callToAction) break;
-    const narration = [...lines.slice(0, i), ...lines.slice(i + 1)].join('\n').trim();
-    return { narration, callToAction };
+export function parseCallsToAction(text: string, charactersAtTable: Character[]): { narration: string; calls: CallToAction[] } {
+  const kept: string[] = [];
+  const parsed: CallToAction[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/[*_]/g, '').trim(); // the GM may bold or italicize the line
+    const call = line.startsWith('👉') || line.startsWith('🎲') ? parseLine(line, charactersAtTable) : null;
+    if (call) parsed.push(call);
+    else kept.push(raw);
   }
-  return { narration: text.trim(), callToAction: null };
+
+  const checks = new Map<string, CallToAction>();
+  for (const call of parsed) {
+    if (call.kind === 'check') checks.set(call.userId, call);
+  }
+  const calls = checks.size ? [...checks.values()] : parsed.slice(-1);
+  return { narration: kept.join('\n').trim(), calls };
 }
 
 function parseLine(line: string, characters: Character[]): CallToAction | null {
@@ -69,6 +72,10 @@ function parseLine(line: string, characters: Character[]): CallToAction | null {
   const turn = TURN_LINE.exec(line);
   if (turn) {
     const [, name = '', prompt = ''] = turn;
+    if (name.trim().toLowerCase() === 'todos' && characters.length) {
+      const players = characters.map((c) => ({ userId: c.userId, characterName: c.name }));
+      return { kind: 'group', players, prompt: prompt.trim() };
+    }
     const character = findCharacter(characters, name);
     if (!character) return null;
     return { kind: 'turn', userId: character.userId, characterName: character.name, prompt: prompt.trim() };

@@ -6,17 +6,13 @@ import {
   characterAttributes,
   charactersAtTable,
   lastSummary,
-  pendingChecks,
-  turnOrder,
   type Campaign,
   type Character,
   type HistoryEntry,
-  type PendingCheck,
-  type TurnStanding,
 } from '../state/campaign.ts';
 
 /** How many recent history entries go into the prompt. */
-export const HISTORY_WINDOW = 12;
+export const HISTORY_WINDOW = 16; // a round with several players takes several entries
 
 export interface LlmContext {
   system: string;
@@ -63,16 +59,6 @@ function campaignBlock(campaign: Campaign): string {
   if (absent.length) {
     lines.push(`Personagens ausentes nesta sessão (não aparecem na cena): ${describe(absent)}`);
   }
-  // Whoever has a check to roll is already called: they leave the turn order until they roll.
-  const pending = pendingChecks(campaign);
-  const nextUp = turnOrder(campaign).filter(({ character }) => !pending[character.userId]);
-  if (atTable.length > 1 && nextUp.length) {
-    lines.push(`Ordem da vez (quem está há mais tempo sem agir vem primeiro): ${nextUp.map(describeStanding).join(', ')}`);
-  }
-  const waitingRoll = Object.entries(pending).map(([userId, check]) => describePending(campaign, userId, check));
-  if (waitingRoll.length) {
-    lines.push(`Testes pendentes (aguardando o jogador rolar): ${waitingRoll.join('; ')}`);
-  }
   const summary = lastSummary(campaign);
   if (summary) {
     lines.push('', `Resumo da sessão anterior:\n${summary}`);
@@ -88,20 +74,6 @@ function describeCharacter(character: Character): string {
   const attributes = characterAttributes(character);
   const stats = ATTRIBUTES.map((a) => `${ATTRIBUTE_LABELS[a]} ${formatModifier(attributes[a])}`).join(', ');
   return `${character.name} (${character.concept}; ${stats})`;
-}
-
-/** e.g. "Rui (ainda não agiu nesta sessão)", "Lia (sem agir há 2 respostas)" or "Tomás (acabou de agir)". */
-function describeStanding({ character, waiting }: TurnStanding): string {
-  if (waiting === null) return `${character.name} (ainda não agiu nesta sessão)`;
-  if (waiting === 0) return `${character.name} (acabou de agir)`;
-  return `${character.name} (sem agir há ${waiting} ${waiting === 1 ? 'resposta' : 'respostas'})`;
-}
-
-/** e.g. "Lia: Agilidade, dificuldade 15, para subir o mastro". */
-function describePending(campaign: Campaign, userId: string, check: PendingCheck): string {
-  const name = campaign.characters[userId]?.name ?? 'Jogador';
-  const goal = check.goal ? `, para ${check.goal}` : '';
-  return `${name}: ${ATTRIBUTE_LABELS[check.attribute]}, dificuldade ${check.difficulty}${goal}`;
 }
 
 /** Turns a history entry into text, e.g. "Lia: abro a porta" or "Lia rolou 1d20+2 = 17 (15 + 2)". */
