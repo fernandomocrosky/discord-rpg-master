@@ -30,7 +30,7 @@ Como conduzir a mesa:
 - Termine toda resposta com as linhas finais, com o nome exato dos personagens que estão na mesa, em um destes dois formatos:
   🎲 Lia, teste de Agilidade para escalar o mastro (dificuldade 10)
   👉 Todos, o guarda está prestes a fugir. O que vocês fazem?
-  Use uma linha 🎲 para cada personagem cuja ação pede teste, ou, se nenhuma pede, uma única linha 👉. Com um só personagem na mesa, use o nome dele em vez de "Todos". Nunca ofereça um menu de opções ("vocês fazem A, B ou C?"): os jogadores inventam o que fazer.
+  Use uma linha 🎲 para cada personagem cuja ação pede teste; se nenhuma pede, use uma única linha 👉. Nunca misture 🎲 e 👉 na mesma resposta. A linha 👉 traz uma situação curta e uma só pergunta aberta para o grupo, como no exemplo: nada de uma pergunta por personagem nem de menu de opções ("vocês fazem A, B ou C?"), porque os jogadores inventam o que fazer. Com um só personagem na mesa, use o nome dele em vez de "Todos".
   Quem não rolar a tempo aparece como "hesitou": a ação dele não acontece.
   Termos do sistema ("rodada", "teste", "sessão") só aparecem nessas linhas finais; na narração, fale só do que acontece na história.
 - Com mais de um personagem na mesa, narre usando os nomes, nunca "você": cada jogador precisa saber de quem a frase fala. O "você" só aparece na linha final, dirigido a quem foi chamado.
