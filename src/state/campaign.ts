@@ -68,7 +68,7 @@ export interface Campaign {
 }
 
 /** How many history entries are stored. The prompt uses an even smaller window. */
-export const MAX_STORED_HISTORY = 50;
+export const MAX_STORED_HISTORY = 500;
 
 export function createCampaign(
   channelId: string,
