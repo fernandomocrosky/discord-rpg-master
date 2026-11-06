@@ -19,8 +19,8 @@ export type CallToAction =
       stakes?: string;
     };
 
-/** Used when the GM forgets the difficulty: "média". It is still shown before the roll. */
-export const DEFAULT_DIFFICULTY = 15;
+/** Used when the GM forgets the difficulty: the standard one. It is still shown before the roll. */
+export const DEFAULT_DIFFICULTY = 10;
 
 const TURN_LINE = /^👉\s*(.+?),\s*(.+)$/;
 const CHECK_LINE = /^🎲\s*(.+?),\s*teste\s+de\s+(\p{L}+)(?:\s+para\s+(.+?))?\s*(?:\(\s*dificuldade\s*(\d+)\s*\)\s*\.?\s*(.*?)\s*|\.?)$/iu;
