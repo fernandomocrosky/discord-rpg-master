@@ -14,14 +14,17 @@ import {
   appendHistory,
   characterAttributes,
   charactersAtTable,
+  clearPendingCheck,
   createCampaign,
   currentSession,
   endSession,
   lastSummary,
+  pendingChecks,
   recordSetupUsage,
   recordUsage,
   sessionHistory,
   setCharacter,
+  setPendingCheck,
   setSecrets,
   startSession,
   type Campaign,
@@ -62,7 +65,7 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
     updated = recordUsage(updated, usage);
     // History keeps the raw text (with the closing line) so the GM keeps seeing its own format.
     const { narration, callToAction } = parseCallToAction(text, charactersAtTable(updated));
-    return { campaign: updated, narration: { text: narration, callToAction } };
+    return { campaign: trackPendingCheck(updated, callToAction), narration: { text: narration, callToAction } };
   }
 
   /**
@@ -178,9 +181,14 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
       difficulty: number,
     ): Promise<{ check: CheckResult; narration: Narration }> {
       return withPlayer(channelId, userId, async (campaign) => {
+        // Buttons outlive their check (repeated requests, old messages): only the pending one rolls.
+        const pending = pendingChecks(campaign)[userId];
+        if (pending?.attribute !== attribute || pending.difficulty !== difficulty) {
+          throw new GameError('Este teste já foi resolvido ou não vale mais.');
+        }
         const modifier = characterAttributes(campaign.characters[userId]!)[attribute];
         const check = rollCheck(attribute, modifier, difficulty, rng);
-        const withCheck = appendHistory(campaign, { role: 'check', userId, text: describeCheck(check) });
+        const withCheck = appendHistory(clearPendingCheck(campaign, userId), { role: 'check', userId, text: describeCheck(check) });
         const { campaign: updated, narration } = await narrate(withCheck);
         return { campaign: updated, result: { check, narration } };
       });
@@ -242,6 +250,14 @@ export function createGame({ store, generate, rng = Math.random }: GameDeps) {
 }
 
 export type Game = ReturnType<typeof createGame>;
+
+/** A new call to action replaces the character's pending check: a new check takes its place, a turn cancels it. */
+function trackPendingCheck(campaign: Campaign, callToAction: CallToAction | null): Campaign {
+  if (!callToAction) return campaign;
+  if (callToAction.kind === 'turn') return clearPendingCheck(campaign, callToAction.userId);
+  const { userId, attribute, difficulty, goal } = callToAction;
+  return setPendingCheck(campaign, userId, { attribute, difficulty, ...(goal ? { goal } : {}) });
+}
 
 function requireCampaign(campaign: Campaign | null): Campaign {
   if (!campaign) {

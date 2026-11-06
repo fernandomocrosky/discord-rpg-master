@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { CONTINUE_PLACEHOLDER } from '../llm/prompts.ts';
-import { appendHistory, createCampaign, endSession, setCharacter, setSecrets, startSession } from '../state/campaign.ts';
+import { appendHistory, createCampaign, endSession, setCharacter, setPendingCheck, setSecrets, startSession } from '../state/campaign.ts';
 import { HISTORY_WINDOW, buildContext } from './context.ts';
 
 const withLia = () =>
@@ -36,6 +36,14 @@ test('the turn order is sent only when more than one character is at the table',
     buildContext(c).system,
     /Ordem da vez[^\n]*: Tomás \(ainda não agiu nesta sessão\), Lia \(acabou de agir\)/,
   );
+});
+
+test('whoever has a pending check is listed as such and leaves the turn order', () => {
+  let c = startSession(setCharacter(withLia(), { userId: 'u2', name: 'Tomás', concept: 'padre jovem' }), ['u1', 'u2']);
+  c = setPendingCheck(c, 'u1', { attribute: 'agilidade', difficulty: 15, goal: 'subir o mastro' });
+  const { system } = buildContext(c, '(continue)');
+  assert.match(system, /Testes pendentes[^\n]*: Lia: Agilidade, dificuldade 15, para subir o mastro/);
+  assert.match(system, /Ordem da vez \([^\n]*\): Tomás \(ainda não agiu nesta sessão\)\n/);
 });
 
 test('system includes the previous session summary when there is one', () => {

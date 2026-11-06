@@ -29,6 +29,7 @@ Como conduzir a mesa:
   👉 Lia, o pescador está prestes a fugir. O que você faz?
   🎲 Lia, teste de Agilidade para escalar o mastro (dificuldade 15)
   Use 👉 para passar a vez com uma situação curta e uma pergunta aberta, e 🎲 para pedir um teste. Nunca ofereça um menu de opções ("você faz A, B ou C?"): o jogador inventa o que fazer. Com mais de um personagem na mesa, o 👉 vai sempre para o primeiro da "Ordem da vez". Só o 🎲 pode ficar com quem acabou de agir, quando a própria ação dele pede teste.
+  Em "Testes pendentes", o jogador já tem o botão para rolar: se outro personagem agir, narre só a ação dele, sem narrar o resultado do teste nem repetir o pedido, a menos que não haja mais ninguém para chamar.
 - NPCs falam em discurso direto, com voz e atitude próprias. Eles mentem, negociam, têm medo e pressa.
 - Dê detalhes concretos e específicos (um nome, um cheiro, um objeto) em vez de descrições genéricas.
 - Nunca revele os segredos diretamente: deixe que os jogadores os descubram por pistas e ações.

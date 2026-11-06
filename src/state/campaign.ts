@@ -1,5 +1,5 @@
 // Campaign model and pure functions to change it. Knows nothing about Discord or where state is stored.
-import { NEUTRAL_ATTRIBUTES, type Attributes } from '../rules/checks.ts';
+import { NEUTRAL_ATTRIBUTES, type Attribute, type Attributes } from '../rules/checks.ts';
 
 export interface Character {
   userId: string;
@@ -28,12 +28,20 @@ export interface TokenUsage {
   calls: number;
 }
 
+/** A check the GM asked for and the player has not rolled yet. */
+export interface PendingCheck {
+  attribute: Attribute;
+  difficulty: number;
+  goal?: string;
+}
+
 export interface Session {
   number: number;
   startedAt: string;
   endedAt?: string;
   summary?: string;
   participants: string[]; // userIds of the players at the table this session
+  pendingChecks?: Record<string, PendingCheck>; // key: userId; at most one per character
   usage: TokenUsage;
 }
 
@@ -120,6 +128,27 @@ export function sessionHistory(campaign: Campaign): HistoryEntry[] {
   const session = currentSession(campaign);
   if (!session) return [];
   return campaign.history.filter((entry) => entry.at >= session.startedAt);
+}
+
+/** Checks waiting to be rolled in the ongoing session. */
+export function pendingChecks(campaign: Campaign): Record<string, PendingCheck> {
+  return currentSession(campaign)?.pendingChecks ?? {};
+}
+
+/** Records the character's pending check, replacing any previous one. */
+export function setPendingCheck(campaign: Campaign, userId: string, check: PendingCheck): Campaign {
+  const session = currentSession(campaign);
+  if (!session) {
+    throw new Error('Não há sessão em andamento.');
+  }
+  return replaceCurrentSession(campaign, { ...session, pendingChecks: { ...session.pendingChecks, [userId]: check } });
+}
+
+export function clearPendingCheck(campaign: Campaign, userId: string): Campaign {
+  const session = currentSession(campaign);
+  if (!session?.pendingChecks?.[userId]) return campaign;
+  const { [userId]: _resolved, ...rest } = session.pendingChecks;
+  return replaceCurrentSession(campaign, { ...session, pendingChecks: rest });
 }
 
 export interface TurnStanding {

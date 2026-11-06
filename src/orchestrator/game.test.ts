@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { GenerateInput } from '../llm/client.ts';
 import { OPEN_SCENE_INSTRUCTION, RESUME_SESSION_INSTRUCTION } from '../llm/prompts.ts';
-import { currentSession } from '../state/campaign.ts';
+import { currentSession, pendingChecks, setPendingCheck } from '../state/campaign.ts';
 import { JsonCampaignStore } from '../state/store.ts';
 import { GameError, createGame, type Generate } from './game.ts';
 
@@ -193,6 +193,7 @@ test('the closing call to action is split from the narration', () =>
 test('playerCheck rolls 1d20 + attribute in code and gives the GM the verdict', () =>
   withGame(async (ctx) => {
     await playing(ctx); // rng 0.5 → d20 lands on 11; Lia has Agilidade +2
+    await ctx.store.update(CHANNEL, (c) => setPendingCheck(c!, 'u1', { attribute: 'agilidade', difficulty: 15 }));
     const { check } = await ctx.game.playerCheck(CHANNEL, 'u1', 'agilidade', 15);
     assert.deepEqual(check, {
       attribute: 'agilidade',
@@ -207,6 +208,60 @@ test('playerCheck rolls 1d20 + attribute in code and gives the GM the verdict', 
       ctx.llm.calls.at(-1)!.messages.at(-1)?.content,
       'Lia fez teste de Agilidade: 1d20 (11) +2 = 13 contra dificuldade 15 → Por pouco, faltaram 2 (consegue, mas com um custo ou complicação)',
     );
+  }));
+
+/** Fake LLM that gives each scripted line in turn, then plain narration. */
+const scripted = (...lines: string[]): Generate => {
+  const queue = [...lines];
+  return async () => ({ text: `Cena.\n\n${queue.shift() ?? 'Fim.'}`, usage: { inputTokens: 1, outputTokens: 1 } });
+};
+const ASK_CHECK = '🎲 Lia, teste de Agilidade para subir (dificuldade 15)';
+
+test('a requested check rolls only once, even if the GM asked for it twice', () =>
+  withGame(async (ctx) => {
+    await playing(ctx);
+    const game = createGame({ store: ctx.store, generate: scripted(ASK_CHECK, ASK_CHECK), rng: () => 0.5 });
+    await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
+    await game.playerAction(CHANNEL, 'u1', 'subo mesmo');
+    assert.deepEqual(pendingChecks((await ctx.store.load(CHANNEL))!), {
+      u1: { attribute: 'agilidade', difficulty: 15, goal: 'subir' },
+    });
+
+    await game.playerCheck(CHANNEL, 'u1', 'agilidade', 15);
+    assert.deepEqual(pendingChecks((await ctx.store.load(CHANNEL))!), {});
+
+    await assert.rejects(game.playerCheck(CHANNEL, 'u1', 'agilidade', 15), GameError);
+    const { history } = (await ctx.store.load(CHANNEL))!;
+    assert.equal(history.filter((entry) => entry.role === 'check').length, 1);
+  }));
+
+test('a check that is not the pending one cannot be rolled', () =>
+  withGame(async (ctx) => {
+    await playing(ctx);
+    await assert.rejects(ctx.game.playerCheck(CHANNEL, 'u1', 'agilidade', 15), GameError);
+
+    const game = createGame({ store: ctx.store, generate: scripted(ASK_CHECK), rng: () => 0.5 });
+    await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
+    await assert.rejects(game.playerCheck(CHANNEL, 'u1', 'agilidade', 10), GameError);
+    await assert.rejects(game.playerCheck(CHANNEL, 'u1', 'mente', 15), GameError);
+  }));
+
+test('a pending check survives other players acting, and a new turn for its owner cancels it', () =>
+  withGame(async (ctx) => {
+    await playing(ctx);
+    await ctx.game.createCharacter(CHANNEL, 'u2', { name: 'Tomás', concept: 'padre', profile: PROFILE });
+    const game = createGame({
+      store: ctx.store,
+      generate: scripted(ASK_CHECK, '👉 Tomás, o que você faz?', '👉 Lia, o que você faz?'),
+      rng: () => 0.5,
+    });
+    await game.playerAction(CHANNEL, 'u1', 'subo no mastro');
+    await game.playerAction(CHANNEL, 'u2', 'rezo');
+    assert.deepEqual(Object.keys(pendingChecks((await ctx.store.load(CHANNEL))!)), ['u1']);
+
+    await game.playerAction(CHANNEL, 'u1', 'desisto de subir');
+    assert.deepEqual(pendingChecks((await ctx.store.load(CHANNEL))!), {});
+    await assert.rejects(game.playerCheck(CHANNEL, 'u1', 'agilidade', 15), GameError);
   }));
 
 test('getStatus and listCampaigns report active campaigns', () =>

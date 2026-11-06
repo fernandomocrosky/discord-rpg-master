@@ -6,14 +6,17 @@ import {
   appendHistory,
   characterAttributes,
   charactersAtTable,
+  clearPendingCheck,
   createCampaign,
   currentSession,
   endSession,
   lastSummary,
+  pendingChecks,
   recordSetupUsage,
   recordUsage,
   sessionHistory,
   setCharacter,
+  setPendingCheck,
   setSecrets,
   startSession,
   totalUsage,
@@ -164,4 +167,24 @@ test('turnOrder ignores what happened before the session', () => {
   c = appendHistory(c, { role: 'player', userId: 'u1', text: 'antes' }, new Date('2020-01-01'));
   c = startSession(c, ['u1'], new Date('2020-01-02'));
   assert.deepEqual(turnOrder(c).map((s) => s.waiting), [null]);
+});
+
+test('pending checks: one per character, replaced and cleared', () => {
+  const first = { attribute: 'agilidade', difficulty: 15 } as const;
+  const second = { attribute: 'mente', difficulty: 20, goal: 'lembrar' } as const;
+  let c = setPendingCheck(inSession(), 'u1', first);
+  c = setPendingCheck(c, 'u2', first);
+  c = setPendingCheck(c, 'u1', second);
+  assert.deepEqual(pendingChecks(c), { u1: second, u2: first });
+
+  c = clearPendingCheck(c, 'u1');
+  assert.deepEqual(pendingChecks(c), { u2: first });
+  assert.equal(clearPendingCheck(c, 'u1'), c); // nothing to clear
+});
+
+test('pending checks do not carry over to the next session', () => {
+  const c = setPendingCheck(inSession(), 'u1', { attribute: 'mente', difficulty: 15 });
+  const ended = endSession(c, 'resumo');
+  assert.deepEqual(pendingChecks(ended), {});
+  assert.deepEqual(pendingChecks(startSession(ended, ['u1'])), {});
 });
