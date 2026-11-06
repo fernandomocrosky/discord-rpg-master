@@ -4,3 +4,4 @@ data/
 
 # Local art (bot avatar/banner), kept out of the repo
 profile.jpg
+sim-output/
