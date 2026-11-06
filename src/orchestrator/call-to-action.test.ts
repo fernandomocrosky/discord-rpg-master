@@ -58,3 +58,27 @@ test('no closing line: narration only', () => {
     callToAction: null,
   });
 });
+
+test('check line: text after the difficulty does not hide it and becomes the stakes', () => {
+  const { narration, callToAction } = parseCallToAction(
+    'A lança desce.\n\n🎲 Lia, teste de Mente para lançar o sono (dificuldade 20). Se falhar, ela desmaia.',
+    table,
+  );
+  assert.equal(narration, 'A lança desce.');
+  assert.deepEqual(callToAction, {
+    kind: 'check',
+    userId: 'u1',
+    characterName: 'Lia',
+    attribute: 'mente',
+    modifier: 1,
+    difficulty: 20,
+    goal: 'lançar o sono',
+    stakes: 'Se falhar, ela desmaia.',
+  });
+});
+
+test('check line: a period after the difficulty is not stakes', () => {
+  const { callToAction } = parseCallToAction('🎲 Lia, teste de Mente para lembrar (dificuldade 20).', table);
+  assert.equal(callToAction?.kind === 'check' && callToAction.difficulty, 20);
+  assert.equal(callToAction?.kind === 'check' && callToAction.stakes, undefined);
+});

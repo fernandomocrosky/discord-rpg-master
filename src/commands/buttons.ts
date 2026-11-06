@@ -33,7 +33,7 @@ export function narrationReply(header: string, narration: Narration): ReplyConte
   const label = ATTRIBUTE_LABELS[action.attribute];
   const details = [action.goal && capitalize(action.goal), label, `dificuldade ${action.difficulty}`].filter(Boolean);
   return {
-    text: `${text}\n\n${DIVIDER}\n🎲 Teste de ${who}\n${details.join(' · ')}`,
+    text: `${text}\n\n${DIVIDER}\n🎲 Teste de ${who}\n${details.join(' · ')}${action.stakes ? `\n${action.stakes}` : ''}`,
     components: [new ActionRowBuilder<ButtonBuilder>().addComponents(checkButton(action))],
   };
 }
