@@ -22,9 +22,9 @@ export function helpEmbed(): EmbedBuilder {
       {
         name: '▸ Durante o jogo',
         value: [
-          '`/acao` — diga o que seu personagem faz ou fala',
-          '👉 Quando eu marcar você, é a sua vez',
-          '🎲 Quando eu pedir um teste, quem foi marcado clica no botão: rolo 1d20 + o atributo e comparo com a dificuldade',
+          '`/acao` — diga o que seu personagem faz ou fala (mandar de novo troca a ação)',
+          '👉 Todos declaram, e eu respondo quando todos tiverem declarado ou em 3 minutos. "Resolver agora" adianta',
+          '🎲 Quando eu pedir um teste, quem foi marcado clica no botão: rolo 1d20 + o atributo e comparo com a dificuldade. Quem não rolar em 3 minutos hesita, e a ação não acontece',
           '`/ficha` — veja seu personagem e atributos (só você vê)',
           '`/rolar` — rolagem livre, ex.: dano (`2d6+1`)',
         ].join('\n'),
