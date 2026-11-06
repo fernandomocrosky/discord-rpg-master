@@ -17,6 +17,7 @@ import {
   setSecrets,
   startSession,
   totalUsage,
+  turnOrder,
 } from './campaign.ts';
 
 const base = () => createCampaign('123', { setting: 'Vila costeira', tone: 'mistério', hook: 'Um navio sem tripulação' });
@@ -139,4 +140,28 @@ test('characterAttributes defaults older characters to +0', () => {
   });
   const attributes = { forca: 2, agilidade: 1, mente: 0, presenca: -1 };
   assert.deepEqual(characterAttributes({ userId: 'u1', name: 'Lia', concept: 'x', attributes }), attributes);
+});
+
+test('turnOrder starts with whoever has gone longest without acting', () => {
+  let c = base();
+  for (const [userId, name] of [['u1', 'Lia'], ['u2', 'Tomás'], ['u3', 'Rui']] as const) {
+    c = setCharacter(c, { userId, name, concept: 'x' });
+  }
+  c = startSession(c, ['u1', 'u2', 'u3']);
+  const order = () => turnOrder(c).map(({ character, waiting }) => [character.name, waiting]);
+  assert.deepEqual(order(), [['Lia', null], ['Tomás', null], ['Rui', null]]);
+
+  c = appendHistory(c, { role: 'player', userId: 'u1', text: 'abro a porta' });
+  c = appendHistory(c, { role: 'gm', text: 'range' });
+  c = appendHistory(c, { role: 'check', userId: 'u2', text: 'teste' });
+  c = appendHistory(c, { role: 'gm', text: 'consegue' });
+  c = appendHistory(c, { role: 'player', userId: 'u2', text: 'entro' });
+  assert.deepEqual(order(), [['Rui', null], ['Lia', 2], ['Tomás', 0]]);
+});
+
+test('turnOrder ignores what happened before the session', () => {
+  let c = setCharacter(base(), { userId: 'u1', name: 'Lia', concept: 'x' });
+  c = appendHistory(c, { role: 'player', userId: 'u1', text: 'antes' }, new Date('2020-01-01'));
+  c = startSession(c, ['u1'], new Date('2020-01-02'));
+  assert.deepEqual(turnOrder(c).map((s) => s.waiting), [null]);
 });

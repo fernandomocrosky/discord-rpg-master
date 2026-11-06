@@ -27,6 +27,17 @@ test('characters of players not at the table are listed as absent', () => {
   assert.match(system, /ausentes nesta sessão[^\n]*Lia/);
 });
 
+test('the turn order is sent only when more than one character is at the table', () => {
+  assert.doesNotMatch(buildContext(base(), '(abra)').system, /Ordem da vez \(/);
+
+  let c = startSession(setCharacter(withLia(), { userId: 'u2', name: 'Tomás', concept: 'padre jovem' }), ['u1', 'u2']);
+  c = appendHistory(c, { role: 'player', userId: 'u1', text: 'subo a bordo' });
+  assert.match(
+    buildContext(c).system,
+    /Ordem da vez[^\n]*: Tomás \(ainda não agiu nesta sessão\), Lia \(acabou de agir\)/,
+  );
+});
+
 test('system includes the previous session summary when there is one', () => {
   const c = startSession(endSession(base(), 'Acharam o diário.'), ['u1']);
   assert.match(buildContext(c, '(retome)').system, /Resumo da sessão anterior:\nAcharam o diário\./);
