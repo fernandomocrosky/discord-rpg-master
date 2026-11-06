@@ -35,6 +35,13 @@ export interface PendingCheck {
   goal?: string;
 }
 
+/** Something a player declared in the open round, waiting for the GM's single response. */
+export interface RoundEntry {
+  userId: string;
+  role: 'player' | 'roll';
+  text: string;
+}
+
 export interface Session {
   number: number;
   startedAt: string;
@@ -42,6 +49,8 @@ export interface Session {
   summary?: string;
   participants: string[]; // userIds of the players at the table this session
   pendingChecks?: Record<string, PendingCheck>; // key: userId; at most one per character
+  round?: RoundEntry[]; // declared since the GM last spoke
+  roundDeadline?: string; // ISO 8601; when the open round or the pending checks stop waiting
   usage: TokenUsage;
 }
 
@@ -149,6 +158,55 @@ export function clearPendingCheck(campaign: Campaign, userId: string): Campaign 
   if (!session?.pendingChecks?.[userId]) return campaign;
   const { [userId]: _resolved, ...rest } = session.pendingChecks;
   return replaceCurrentSession(campaign, { ...session, pendingChecks: rest });
+}
+
+export function roundEntries(campaign: Campaign): RoundEntry[] {
+  return currentSession(campaign)?.round ?? [];
+}
+
+export function roundDeadline(campaign: Campaign): string | undefined {
+  return currentSession(campaign)?.roundDeadline;
+}
+
+export function setRoundDeadline(campaign: Campaign, deadline: string | undefined): Campaign {
+  const session = currentSession(campaign);
+  if (!session) {
+    throw new Error('Não há sessão em andamento.');
+  }
+  const { roundDeadline: _previous, ...rest } = session;
+  return replaceCurrentSession(campaign, deadline ? { ...rest, roundDeadline: deadline } : rest);
+}
+
+/** Adds to the open round. A new action replaces the player's previous one; free rolls add up. */
+export function declare(campaign: Campaign, entry: RoundEntry, deadline: string): Campaign {
+  const session = currentSession(campaign);
+  if (!session) {
+    throw new Error('Não há sessão em andamento.');
+  }
+  const kept = (session.round ?? []).filter((e) => entry.role !== 'player' || e.role !== 'player' || e.userId !== entry.userId);
+  return replaceCurrentSession(campaign, {
+    ...session,
+    round: [...kept, entry],
+    roundDeadline: session.roundDeadline ?? deadline,
+  });
+}
+
+/** Participants who have declared nothing in the open round. */
+export function undeclared(campaign: Campaign): string[] {
+  const session = currentSession(campaign);
+  if (!session) return [];
+  return session.participants.filter((id) => !session.round?.some((entry) => entry.userId === id));
+}
+
+/** Moves what was declared into the history, closing the round. */
+export function flushRound(campaign: Campaign, now = new Date()): Campaign {
+  const session = currentSession(campaign);
+  if (!session) {
+    throw new Error('Não há sessão em andamento.');
+  }
+  const { round = [], roundDeadline: _deadline, ...rest } = session;
+  const closed = replaceCurrentSession(campaign, rest);
+  return round.reduce((updated, entry) => appendHistory(updated, entry, now), closed);
 }
 
 export interface TurnStanding {

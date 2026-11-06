@@ -9,18 +9,24 @@ import {
   clearPendingCheck,
   createCampaign,
   currentSession,
+  declare,
   endSession,
+  flushRound,
   lastSummary,
   pendingChecks,
   recordSetupUsage,
   recordUsage,
+  roundDeadline,
+  roundEntries,
   sessionHistory,
   setCharacter,
   setPendingCheck,
+  setRoundDeadline,
   setSecrets,
   startSession,
   totalUsage,
   turnOrder,
+  undeclared,
 } from './campaign.ts';
 
 const base = () => createCampaign('123', { setting: 'Vila costeira', tone: 'mistério', hook: 'Um navio sem tripulação' });
@@ -187,4 +193,46 @@ test('pending checks do not carry over to the next session', () => {
   const ended = endSession(c, 'resumo');
   assert.deepEqual(pendingChecks(ended), {});
   assert.deepEqual(pendingChecks(startSession(ended, ['u1'])), {});
+});
+
+const DEADLINE = '2030-01-01T00:00:00.000Z';
+const table = () => startSession(base(), ['u1', 'u2']);
+
+test('declare: a new action replaces the previous one, free rolls add up', () => {
+  let c = declare(table(), { userId: 'u1', role: 'player', text: 'abro' }, DEADLINE);
+  c = declare(c, { userId: 'u1', role: 'roll', text: '2d6 = 7' }, DEADLINE);
+  c = declare(c, { userId: 'u1', role: 'player', text: 'fecho' }, DEADLINE);
+  assert.deepEqual(roundEntries(c).map((e) => e.text), ['2d6 = 7', 'fecho']);
+});
+
+test('declare: the deadline comes from the first entry of the round', () => {
+  let c = declare(table(), { userId: 'u1', role: 'player', text: 'abro' }, DEADLINE);
+  c = declare(c, { userId: 'u2', role: 'player', text: 'olho' }, '2031-01-01T00:00:00.000Z');
+  assert.equal(roundDeadline(c), DEADLINE);
+});
+
+test('undeclared lists who has not acted in the round', () => {
+  const c = declare(table(), { userId: 'u1', role: 'player', text: 'abro' }, DEADLINE);
+  assert.deepEqual(undeclared(c), ['u2']);
+  assert.deepEqual(undeclared(declare(c, { userId: 'u2', role: 'roll', text: '1d6 = 3' }, DEADLINE)), []);
+});
+
+test('flushRound moves entries to the history and closes the round', () => {
+  let c = declare(table(), { userId: 'u1', role: 'player', text: 'abro' }, DEADLINE);
+  c = declare(c, { userId: 'u2', role: 'roll', text: '1d6 = 3' }, DEADLINE);
+  c = flushRound(c);
+  assert.deepEqual(c.history.map((h) => [h.userId, h.role, h.text]), [['u1', 'player', 'abro'], ['u2', 'roll', '1d6 = 3']]);
+  assert.deepEqual(roundEntries(c), []);
+  assert.equal(roundDeadline(c), undefined);
+});
+
+test('setRoundDeadline sets and clears', () => {
+  const c = setRoundDeadline(table(), DEADLINE);
+  assert.equal(roundDeadline(c), DEADLINE);
+  assert.equal(roundDeadline(setRoundDeadline(c, undefined)), undefined);
+});
+
+test('the round does not carry over to the next session', () => {
+  const c = declare(table(), { userId: 'u1', role: 'player', text: 'abro' }, DEADLINE);
+  assert.deepEqual(roundEntries(startSession(endSession(c, 'resumo'), ['u1'])), []);
 });
